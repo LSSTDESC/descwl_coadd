@@ -23,6 +23,8 @@ install:
       setuptools \
       flake8 \
       pytest \
+      galsim \
+      ngmix \
       numpy
 
     source activate test-env
