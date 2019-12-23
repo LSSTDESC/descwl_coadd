@@ -7,7 +7,7 @@ cache:
 
 install:
   - |
-    if [ ! -d "$HOME/miniconda" ]; then
+    if [ ! -f "$HOME/miniconda/condabin/conda" ]; then
 
       echo "installing miniconda"
       rm -rf $HOME/miniconda
