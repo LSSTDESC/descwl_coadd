@@ -47,6 +47,7 @@ install:
       ngmix \
       numpy
 
+    pip install --no-deps git+https://github.com/LSSTDESC/wl-shear-testing-sims.git
     pip install --no-deps -e .
 
 script:
