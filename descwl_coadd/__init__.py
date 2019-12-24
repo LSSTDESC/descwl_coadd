@@ -1,1 +1,1 @@
-from .coadd_simple import CoaddObsSimple
+from .coadd_simple import CoaddObsSimple  # noqa
