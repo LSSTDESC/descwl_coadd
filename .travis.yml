@@ -1,10 +1,6 @@
 language: generic
 sudo: required
 
-cache:
-  directories:
-  - $HOME/miniconda
-
 install:
   - |
     if [ ! -f "$HOME/miniconda/condabin/conda" ]; then
