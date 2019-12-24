@@ -6,15 +6,17 @@ import ngmix
 import galsim
 
 
-class CoaddSimpleObs(ngmix.Observation):
+class CoaddObsSimple(ngmix.Observation):
     """
     Coadd a simple set of perfectly aligned images with constant psf and
     non-varying wcs
 
     Parameters
     ----------
-    data: OrderedDict
-        keyed by band, with each element a list of SEObs
+    data: list of observations
+        For a single band.  Should have image, weight, noise, wcs attributes,
+        as well as get_psf method.  For example see the simple sim from
+        descwl_shear_testing
     """
     def __init__(self, data):
         self._data = data
