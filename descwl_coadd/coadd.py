@@ -16,7 +16,7 @@ import coord
 import ngmix
 
 
-class Coadd(ngmix.Observation):
+class CoaddObs(ngmix.Observation):
     """
     Parameters
     ----------
@@ -29,9 +29,13 @@ class Coadd(ngmix.Observation):
     coadd_dims: (nx, ny)
         Currently doing x first rather than row, col
     """
-    def __init__(self, data, coadd_wcs, coadd_dims):
+    def __init__(self, *,
+                 data,
+                 coadd_wcs,
+                 coadd_dims):
         self._data = data
-        self._coadd_wcs = coadd_wcs
+        self._coadd_wcs = make_stack_wcs(coadd_wcs)
+
         self._coadd_dims = coadd_dims
         self._interp = 'lanczos3'
 
@@ -50,7 +54,6 @@ class Coadd(ngmix.Observation):
 
             wcs = se_obs.wcs
             crpix = wcs.crpix
-            cd_matrix = wcs.cd
 
             cenx, ceny = crpix
 
@@ -62,13 +65,13 @@ class Coadd(ngmix.Observation):
 
             # TODO:  do this better, could be zeros, not uniform, etc
             w = np.where(weight > 0)
-            assert w.size > 0
+            assert w[0].size > 0
             noise_sigma = np.sqrt(1.0/weight[w[0][0], w[1][0]])
 
             sy, sx = image.shape
 
             masked_image = afw_image.MaskedImageF(sx, sy)
-            masked_image.image.array[:] = image.array
+            masked_image.image.array[:] = image
             masked_image.variance.array[:] = noise_sigma**2
 
             # TODO:  look for real mask
@@ -81,16 +84,21 @@ class Coadd(ngmix.Observation):
             exp.setPsf(exp_psf)
 
             # set single WCS
+            """
+            stack_crpix = geom.Point2D(crpix[0], crpix[1])
+            cd_matrix = wcs.cd
             crval = geom.SpherePoint(
                 wcs.center.ra/coord.radians,
                 wcs.center.dec/coord.radians,
                 geom.radians,
             )
             stack_wcs = makeSkyWcs(
-                crpix=crpix,
+                crpix=stack_crpix,
                 crval=crval,
                 cdMatrix=cd_matrix,
             )
+            """
+            stack_wcs = make_stack_wcs(wcs)
             exp.setWcs(stack_wcs)
             exps.append(exp)
 
@@ -199,8 +207,31 @@ class Coadd(ngmix.Observation):
 
 
 def make_stack_psf(psf_image):
+    """
+    make fixed image psf for stack usage
+    """
     return KernelPsf(
         FixedKernel(
             afw_image.ImageD(psf_image.astype(np.float))
         )
+    )
+
+
+def make_stack_wcs(wcs):
+    """
+    convert galsim tan wcs to stack wcs
+    """
+    crpix = wcs.crpix
+    stack_crpix = geom.Point2D(crpix[0], crpix[1])
+    cd_matrix = wcs.cd
+
+    crval = geom.SpherePoint(
+        wcs.center.ra/coord.radians,
+        wcs.center.dec/coord.radians,
+        geom.radians,
+    )
+    return makeSkyWcs(
+        crpix=stack_crpix,
+        crval=crval,
+        cdMatrix=cd_matrix,
     )
