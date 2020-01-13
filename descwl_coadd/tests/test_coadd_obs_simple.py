@@ -26,7 +26,7 @@ def se_data():
     return data
 
 
-def test_coadd_obs_smoke(se_data):
+def test_coadd_obs_simple_smoke(se_data):
     data = [SEObs(**se_data)]*3
 
     coadd_obs = CoaddObsSimple(data)  # noqa
