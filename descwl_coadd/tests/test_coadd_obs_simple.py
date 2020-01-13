@@ -2,7 +2,7 @@ import numpy as np
 import galsim
 import pytest
 
-from descwl_shear_testing import SEObs
+from descwl_shear_sims import SEObs
 from ..coadd_simple import CoaddObsSimple
 
 DIMS = (11, 13)
