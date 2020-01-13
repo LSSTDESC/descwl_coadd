@@ -40,6 +40,9 @@ class Coadd(ngmix.Observation):
         # self._make_coadd()
 
     def _make_exps(self):
+        """
+        make lsst stack exposures for each image
+        """
 
         exps = []
 
@@ -94,6 +97,9 @@ class Coadd(ngmix.Observation):
         self._exps = exps
 
     def _make_warps(self):
+        """
+        make the warp images
+        """
 
         # Setup coadd/warp psf model
         input_recorder_config = CoaddInputRecorderConfig()
@@ -162,6 +168,10 @@ class Coadd(ngmix.Observation):
         self._coadd_psf_config = coadd_psf_config
 
     def _make_coadd(self):
+        """
+        make the coadd from warp images, as well as psf coadd
+        """
+
         input_recorder = self._input_recorder
 
         # combine stack images using mean
