@@ -1,6 +1,5 @@
-import numpy as np
 import ngmix
-import galsim
+
 
 class Coadd(ngmix.Observation):
     """
