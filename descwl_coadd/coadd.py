@@ -266,11 +266,26 @@ class CoaddObs(ngmix.Observation):
 
         self.coadd_exp = stacked_exp
 
-    def _get_psf_obs(self):
+    def _get_jac(self, *, cenx, ceny):
         import galsim
 
         crpix = self._galsim_wcs.crpix
         galsim_pos = galsim.PositionD(x=crpix[0], y=crpix[1])
+
+        galsim_jac = self._galsim_wcs.jacobian(image_pos=galsim_pos)
+
+        return ngmix.Jacobian(
+            x=cenx,
+            y=ceny,
+            dudx=galsim_jac.dudx,
+            dudy=galsim_jac.dudy,
+            dvdx=galsim_jac.dvdx,
+            dvdy=galsim_jac.dvdy,
+        )
+
+    def _get_psf_obs(self):
+
+        crpix = self._galsim_wcs.crpix
         stack_pos = geom.Point2D(crpix[0], crpix[1])
 
         psf_obj = self.coadd_exp.getPsf()
@@ -278,15 +293,7 @@ class CoaddObs(ngmix.Observation):
 
         psf_cen = (np.array(psf_image.shape)-1.0)/2.0
 
-        jac = self._galsim_wcs.jacobian(image_pos=galsim_pos)
-        psf_jac = ngmix.Jacobian(
-            x=psf_cen[1],
-            y=psf_cen[0],
-            dudx=jac.dudx,
-            dudy=jac.dudy,
-            dvdx=jac.dvdx,
-            dvdy=jac.dvdy,
-        )
+        psf_jac = self._get_jac(cenx=psf_cen[1], ceny=psf_cen[0])
 
         psf_err = psf_image.max()*0.0001
         psf_weight = psf_image*0 + 1.0/psf_err**2
@@ -299,17 +306,26 @@ class CoaddObs(ngmix.Observation):
     def _finish_init(self):
         psf_obs = self._get_psf_obs()  # noqa
 
-        """
+        image = self.coadd_exp.image.array
+        var = self.coadd_exp.variance.array
+        w = np.where(np.isfinite(var))
+
+        weight = var*0
+        if w[0].size > 0:
+            weight[w] = np.sqrt(1.0/var[w])
+
+        cen = (np.array(image.shape)-1)/2
+        jac = self._get_jac(cenx=cen[1], ceny=cen[0])
+
         super().__init__(
             image=image,
-            noise=noise,
+            # noise=noise,
             weight=weight,
             bmask=np.zeros(image.shape, dtype='i4'),
             jacobian=jac,
             psf=psf_obs,
             store_pixels=False,
         )
-        """
 
 
 def make_stack_psf(psf_image):
