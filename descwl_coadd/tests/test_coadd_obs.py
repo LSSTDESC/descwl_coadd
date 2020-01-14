@@ -16,7 +16,7 @@ def test_coadd_obs_smoke():
     coadd_dims = (sim.coadd_dim, )*2
     coadds = MultiBandCoadds(
         data=data,
-        coadd_wcs=sim._coadd_wcs,  # TODO:  make getter
+        coadd_wcs=sim.coadd_wcs,
         coadd_dims=coadd_dims,
     )
 
@@ -34,7 +34,7 @@ def test_coadd_obs_smoke():
     # not coadding individual bands
     coadds = MultiBandCoadds(
         data=data,
-        coadd_wcs=sim._coadd_wcs,  # TODO:  make getter
+        coadd_wcs=sim.coadd_wcs,
         coadd_dims=coadd_dims,
         byband=False,
     )
