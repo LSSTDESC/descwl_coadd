@@ -39,7 +39,7 @@ class MultiBandCoadds(object):
                  byband=True):
 
         self._data = data
-        self._coadd_wcs = make_stack_wcs(coadd_wcs)
+        self._coadd_wcs = coadd_wcs
         self._coadd_dims = coadd_dims
         self._byband = byband
 
@@ -153,7 +153,8 @@ class CoaddObs(ngmix.Observation):
                  coadd_dims):
 
         self._exps = exps
-        self._coadd_wcs = coadd_wcs
+        self._galsim_wcs = coadd_wcs
+        self._coadd_wcs = make_stack_wcs(coadd_wcs)
         self._coadd_dims = coadd_dims
 
         self._interp = 'lanczos3'
@@ -256,24 +257,49 @@ class CoaddObs(ngmix.Observation):
         for wexp, weight in zip(self._wexps, self._weights):
             input_recorder.addVisitToCoadd(coadd_inputs, wexp, weight)
 
-        coadd_psf = CoaddPsf(
+        self._coadd_psf = CoaddPsf(
             coadd_inputs.ccds,
             self._coadd_wcs,
             self._coadd_psf_config.makeControl(),
         )
-        stacked_exp.setPsf(coadd_psf)
+        stacked_exp.setPsf(self._coadd_psf)
 
         self.coadd_exp = stacked_exp
 
-    def _finish_init(self):
-        pass
-        """
-        psf_obs = ngmix.Observation(
+    def _get_psf_obs(self):
+        import galsim
+
+        crpix = self._galsim_wcs.crpix
+        galsim_pos = galsim.PositionD(x=crpix[0], y=crpix[1])
+        stack_pos = geom.Point2D(crpix[0], crpix[1])
+
+        psf_obj = self.coadd_exp.getPsf()
+        psf_image = psf_obj.computeKernelImage(stack_pos).array
+
+        psf_cen = (np.array(psf_image.shape)-1.0)/2.0
+
+        jac = self._galsim_wcs.jacobian(image_pos=galsim_pos)
+        psf_jac = ngmix.Jacobian(
+            x=psf_cen[1],
+            y=psf_cen[0],
+            dudx=jac.dudx,
+            dudy=jac.dudy,
+            dvdx=jac.dvdx,
+            dvdy=jac.dvdy,
+        )
+
+        psf_err = psf_image.max()*0.0001
+        psf_weight = psf_image*0 + 1.0/psf_err**2
+        return ngmix.Observation(
             image=psf_image,
             weight=psf_weight,
             jacobian=psf_jac,
         )
 
+    def _finish_init(self):
+        psf_obs = self._get_psf_obs()  # noqa
+
+        """
         super().__init__(
             image=image,
             noise=noise,
