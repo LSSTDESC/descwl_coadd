@@ -12,6 +12,7 @@ def test_coadd_obs_smoke():
     )
     data = sim.gen_sim()
 
+    # coadding individual bands as well as over bands
     coadd_dims = (sim.coadd_dim, )*2
     coadds = MultiBandCoadds(
         data=data,
@@ -26,18 +27,16 @@ def test_coadd_obs_smoke():
         bcoadd = coadds.get_coadd(band=band)
         assert bcoadd.coadd_exp.image.array.shape == coadd_dims
 
-    """
-    mbobs = ngmix.MultiBandObsList()
-    for band in data:
+    # not coadding individual bands
+    coadds = MultiBandCoadds(
+        data=data,
+        coadd_wcs=sim._coadd_wcs,  # TODO:  make getter
+        coadd_dims=coadd_dims,
+        byband=False,
+    )
 
-        coadd_dims = [sim.coadd_dim]*2
-        band_coadd_obs = CoaddObs(
-            data=data[band],
-            coadd_wcs=sim._coadd_wcs,  # TODO:  make getter
-            coadd_dims=coadd_dims,
-        )
+    coadd = coadds.get_coadd()
+    assert coadd.coadd_exp.image.array.shape == coadd_dims
 
-        olist = ngmix.ObsList()
-        olist.append(band_coadd_obs)
-        mbobs.append(olist)
-    """
+    for band in coadds.bands:
+        assert band not in coadds.coadds

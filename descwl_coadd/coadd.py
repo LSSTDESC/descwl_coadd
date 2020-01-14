@@ -28,15 +28,20 @@ class MultiBandCoadds(object):
         wcs for final cuadd
     coadd_dims: (nx, ny)
         Currently doing x first rather than row, col
+    byband: bool
+        If True, make coadds for individual bands as well as over all
+        bands
     """
     def __init__(self, *,
                  data,
                  coadd_wcs,
-                 coadd_dims):
+                 coadd_dims,
+                 byband=True):
 
         self._data = data
         self._coadd_wcs = make_stack_wcs(coadd_wcs)
         self._coadd_dims = coadd_dims
+        self._byband = byband
 
         self._make_exps()
         self._make_coadds()
@@ -62,9 +67,9 @@ class MultiBandCoadds(object):
         Coadd for band
         """
         if band is None:
-            return self._coadds['all']
+            return self.coadds['all']
         else:
-            return self._coadds[band]
+            return self.coadds[band]
 
     def _make_exps(self):
         """
@@ -124,20 +129,21 @@ class MultiBandCoadds(object):
     def _make_coadds(self):
 
         # dict are now ordered since python 3.6
-        self._coadds = {}
+        self.coadds = {}
 
-        self._coadds['all'] = CoaddObs(
+        self.coadds['all'] = CoaddObs(
             exps=self._exps,
             coadd_wcs=self._coadd_wcs,
             coadd_dims=self._coadd_dims,
         )
 
-        for band in self._byband_exps:
-            self._coadds[band] = CoaddObs(
-                exps=self._byband_exps[band],
-                coadd_wcs=self._coadd_wcs,
-                coadd_dims=self._coadd_dims,
-            )
+        if self._byband:
+            for band in self._byband_exps:
+                self.coadds[band] = CoaddObs(
+                    exps=self._byband_exps[band],
+                    coadd_wcs=self._coadd_wcs,
+                    coadd_dims=self._coadd_dims,
+                )
 
 
 class CoaddObs(ngmix.Observation):
