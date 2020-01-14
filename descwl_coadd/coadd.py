@@ -103,39 +103,59 @@ class MultiBandCoadds(object):
                 # TODO:  do this better, could be zeros, not uniform, etc
                 w = np.where(weight > 0)
                 assert w[0].size > 0
-                noise_sigma = np.sqrt(1.0/weight[w[0][0], w[1][0]])
+                noise_var = 1.0/weight[w[0][0], w[1][0]]
 
                 sy, sx = image.shape
 
-                masked_image = afw_image.MaskedImageF(sx, sy)
-                masked_image.image.array[:] = image
-                masked_image.variance.array[:] = noise_sigma**2
-
                 # TODO:  look for real mask
-                masked_image.mask.array[:] = 0
+                masked_image = afw_image.MaskedImageF(sx, sy)
+                masked_image.image.array[:, :] = image
+                masked_image.variance.array[:, :] = noise_var
+                masked_image.mask.array[:, :] = 0
+
+                # need separate ones, stack coadd code modifies things
+                # internally
+                """
+                band_masked_image = afw_image.MaskedImageF(sx, sy)
+                band_masked_image.image.array[:, :] = image
+                band_masked_image.variance.array[:, :] = noise_var
+                band_masked_image.mask.array[:, :] = 0
+                """
 
                 nmasked_image = afw_image.MaskedImageF(sx, sy)
-                nmasked_image.image.array[:] = noise
-                nmasked_image.variance.array[:] = noise_sigma**2
-                nmasked_image.mask.array[:] = 0
+                nmasked_image.image.array[:, :] = noise
+                nmasked_image.variance.array[:, :] = noise_var
+                nmasked_image.mask.array[:, :] = 0
+
+                """
+                band_nmasked_image = afw_image.MaskedImageF(sx, sy)
+                band_nmasked_image.image.array[:, :] = noise
+                band_nmasked_image.variance.array[:, :] = noise_var
+                band_nmasked_image.mask.array[:, :] = 0
+                """
 
                 exp = afw_image.ExposureF(masked_image)
+                # band_exp = afw_image.ExposureF(band_masked_image)
                 nexp = afw_image.ExposureF(nmasked_image)
+                # band_nexp = afw_image.ExposureF(band_nmasked_image)
 
-                exp_psf = make_stack_psf(psf_image)
-
-                exp.setPsf(exp_psf)
-                nexp.setPsf(exp_psf)
+                exp.setPsf(make_stack_psf(psf_image))
+                # band_exp.setPsf(make_stack_psf(psf_image))
+                nexp.setPsf(make_stack_psf(psf_image))
+                # band_nexp.setPsf(make_stack_psf(psf_image))
 
                 # set single WCS
-                stack_wcs = make_stack_wcs(wcs)
-                exp.setWcs(stack_wcs)
-                nexp.setWcs(stack_wcs)
+                exp.setWcs(make_stack_wcs(wcs))
+                # band_exp.setWcs(make_stack_wcs(wcs))
+                nexp.setWcs(make_stack_wcs(wcs))
+                # band_nexp.setWcs(make_stack_wcs(wcs))
 
                 exps.append(exp)
                 noise_exps.append(nexp)
+                # byband_exps[band].append(band_exp)
                 byband_exps[band].append(exp)
-                byband_noise_exps[band].append(exp)
+                # byband_noise_exps[band].append(band_nexp)
+                byband_noise_exps[band].append(nexp)
 
         self._exps = exps
         self._noise_exps = noise_exps
@@ -149,13 +169,6 @@ class MultiBandCoadds(object):
         # dict are now ordered since python 3.6
         self.coadds = {}
 
-        self.coadds['all'] = CoaddObs(
-            exps=self._exps,
-            noise_exps=self._noise_exps,
-            coadd_wcs=self._coadd_wcs,
-            coadd_dims=self._coadd_dims,
-        )
-
         if self._byband:
             for band in self._byband_exps:
                 self.coadds[band] = CoaddObs(
@@ -164,6 +177,13 @@ class MultiBandCoadds(object):
                     coadd_wcs=self._coadd_wcs,
                     coadd_dims=self._coadd_dims,
                 )
+
+        self.coadds['all'] = CoaddObs(
+            exps=self._exps,
+            noise_exps=self._noise_exps,
+            coadd_wcs=self._coadd_wcs,
+            coadd_dims=self._coadd_dims,
+        )
 
 
 class CoaddObs(ngmix.Observation):
@@ -191,21 +211,16 @@ class CoaddObs(ngmix.Observation):
         """
         make warps and coadds for images and noise fields
         """
-        image_data = self._make_warps('image')
+        image_data = self._make_warps(self._exps)
         self.coadd_exp = self._make_coadd(**image_data)
 
-        noise_data = self._make_warps('noise')
+        noise_data = self._make_warps(self._noise_exps)
         self.coadd_noise_exp = self._make_coadd(**noise_data)
 
-    def _make_warps(self, type):
+    def _make_warps(self, exps):
         """
         make the warp images
         """
-
-        if type == 'noise':
-            exps = self._noise_exps
-        else:
-            exps = self._exps
 
         # Setup coadd/warp psf model
         input_recorder_config = CoaddInputRecorderConfig()
@@ -365,13 +380,12 @@ class CoaddObs(ngmix.Observation):
         if wnf[0].size > 0:
             var[wnf] = -1
 
-
         weight = var.copy()
         weight[:, :] = 0.0
 
         w = np.where(var > 0)
         if w[0].size > 0:
-            weight[w] = np.sqrt(1.0/var[w])
+            weight[w] = 1.0/var[w]
 
             if w[0].size != image.size:
                 wbad = np.where(var <= 0)
