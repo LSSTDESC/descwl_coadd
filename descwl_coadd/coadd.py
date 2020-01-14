@@ -16,14 +16,14 @@ import coord
 import ngmix
 
 
-class CoaddObs(ngmix.Observation):
+class MultiBandCoadds(object):
     """
     Parameters
     ----------
-    data: list of observations
-        For a single band.  Should have image, weight, noise, wcs attributes,
-        as well as get_psf method.  For example see the simple sim from
-        descwl_shear_testing
+    data: dict
+        dict keyed by band.  Each entry is a list of "SEObs", which should have
+        image, weight, noise, wcs attributes, as well as get_psf method.  For
+        example see the simple sim from descwl_shear_testing
     coadd_wcs: galsim wcs
         wcs for final cuadd
     coadd_dims: (nx, ny)
@@ -33,15 +33,38 @@ class CoaddObs(ngmix.Observation):
                  data,
                  coadd_wcs,
                  coadd_dims):
+
         self._data = data
         self._coadd_wcs = make_stack_wcs(coadd_wcs)
-
         self._coadd_dims = coadd_dims
-        self._interp = 'lanczos3'
 
         self._make_exps()
-        self._make_warps()
-        # self._make_coadd()
+        self._make_coadds()
+
+    @property
+    def bands(self):
+        """
+        get list of bands
+        """
+        return [k for k in self._data]
+
+    def get_coadd(self, band=None):
+        """
+        get a coadd
+
+        Parameters
+        ----------
+        band: str, optional
+            Band for coadd, if None return all band coadd
+
+        Returns
+        -------
+        Coadd for band
+        """
+        if band is None:
+            return self._coadds['all']
+        else:
+            return self._coadds[band]
 
     def _make_exps(self):
         """
@@ -49,60 +72,89 @@ class CoaddObs(ngmix.Observation):
         """
 
         exps = []
+        byband_exps = {}
 
-        for epoch_ind, se_obs in enumerate(self._data):
+        for band in self._data:
+            bdata = self._data[band]
+            byband_exps[band] = []
 
-            wcs = se_obs.wcs
-            crpix = wcs.crpix
+            for epoch_ind, se_obs in enumerate(bdata):
 
-            cenx, ceny = crpix
+                wcs = se_obs.wcs
+                crpix = wcs.crpix
 
-            image = se_obs.image.array
-            weight = se_obs.weight.array
+                cenx, ceny = crpix
 
-            # TODO:  get this at the center of coadd
-            psf_image = se_obs.get_psf(cenx, ceny).array
+                image = se_obs.image.array
+                weight = se_obs.weight.array
 
-            # TODO:  do this better, could be zeros, not uniform, etc
-            w = np.where(weight > 0)
-            assert w[0].size > 0
-            noise_sigma = np.sqrt(1.0/weight[w[0][0], w[1][0]])
+                # TODO:  get this at the center of coadd
+                psf_image = se_obs.get_psf(cenx, ceny).array
 
-            sy, sx = image.shape
+                # TODO:  do this better, could be zeros, not uniform, etc
+                w = np.where(weight > 0)
+                assert w[0].size > 0
+                noise_sigma = np.sqrt(1.0/weight[w[0][0], w[1][0]])
 
-            masked_image = afw_image.MaskedImageF(sx, sy)
-            masked_image.image.array[:] = image
-            masked_image.variance.array[:] = noise_sigma**2
+                sy, sx = image.shape
 
-            # TODO:  look for real mask
-            masked_image.mask.array[:] = 0
+                masked_image = afw_image.MaskedImageF(sx, sy)
+                masked_image.image.array[:] = image
+                masked_image.variance.array[:] = noise_sigma**2
 
-            exp = afw_image.ExposureF(masked_image)
+                # TODO:  look for real mask
+                masked_image.mask.array[:] = 0
 
-            exp_psf = make_stack_psf(psf_image)
+                exp = afw_image.ExposureF(masked_image)
 
-            exp.setPsf(exp_psf)
+                exp_psf = make_stack_psf(psf_image)
 
-            # set single WCS
-            """
-            stack_crpix = geom.Point2D(crpix[0], crpix[1])
-            cd_matrix = wcs.cd
-            crval = geom.SpherePoint(
-                wcs.center.ra/coord.radians,
-                wcs.center.dec/coord.radians,
-                geom.radians,
-            )
-            stack_wcs = makeSkyWcs(
-                crpix=stack_crpix,
-                crval=crval,
-                cdMatrix=cd_matrix,
-            )
-            """
-            stack_wcs = make_stack_wcs(wcs)
-            exp.setWcs(stack_wcs)
-            exps.append(exp)
+                exp.setPsf(exp_psf)
+
+                # set single WCS
+                stack_wcs = make_stack_wcs(wcs)
+                exp.setWcs(stack_wcs)
+
+                exps.append(exp)
+                byband_exps[band].append(exp)
 
         self._exps = exps
+        self._byband_exps = byband_exps
+
+    def _make_coadds(self):
+
+        # dict are now ordered since python 3.6
+        self._coadds = {}
+
+        self._coadds['all'] = CoaddObs(
+            exps=self._exps,
+            coadd_wcs=self._coadd_wcs,
+            coadd_dims=self._coadd_dims,
+        )
+
+        for band in self._byband_exps:
+            self._coadds[band] = CoaddObs(
+                exps=self._byband_exps[band],
+                coadd_wcs=self._coadd_wcs,
+                coadd_dims=self._coadd_dims,
+            )
+
+
+class CoaddObs(ngmix.Observation):
+    def __init__(self, *,
+                 exps,
+                 coadd_wcs,
+                 coadd_dims):
+
+        self._exps = exps
+        self._coadd_wcs = coadd_wcs
+        self._coadd_dims = coadd_dims
+
+        self._interp = 'lanczos3'
+
+        self._make_warps()
+        self._make_coadd()
+        self._finish_init()
 
     def _make_warps(self):
         """
@@ -204,6 +256,28 @@ class CoaddObs(ngmix.Observation):
             self._coadd_psf_config.makeControl(),
         )
         stacked_exp.setPsf(coadd_psf)
+
+        self.coadd_exp = stacked_exp
+
+    def _finish_init(self):
+        pass
+        """
+        psf_obs = ngmix.Observation(
+            image=psf_image,
+            weight=psf_weight,
+            jacobian=psf_jac,
+        )
+
+        super().__init__(
+            image=image,
+            noise=noise,
+            weight=weight,
+            bmask=np.zeros(image.shape, dtype='i4'),
+            jacobian=jac,
+            psf=psf_obs,
+            store_pixels=False,
+        )
+        """
 
 
 def make_stack_psf(psf_image):
