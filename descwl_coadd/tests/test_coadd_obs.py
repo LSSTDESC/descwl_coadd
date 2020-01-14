@@ -23,11 +23,13 @@ def test_coadd_obs_smoke():
     coadd = coadds.get_coadd()
     assert coadd.coadd_exp.image.array.shape == coadd_dims
     assert coadd.image.shape == coadd_dims
+    assert coadd.noise.shape == coadd_dims
 
     for band in coadds.bands:
         bcoadd = coadds.get_coadd(band=band)
         assert bcoadd.coadd_exp.image.array.shape == coadd_dims
         assert bcoadd.image.shape == coadd_dims
+        assert bcoadd.noise.shape == coadd_dims
 
     # not coadding individual bands
     coadds = MultiBandCoadds(
