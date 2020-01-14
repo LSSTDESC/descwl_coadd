@@ -60,7 +60,7 @@ class MultiBandCoadds(object):
         Parameters
         ----------
         band: str, optional
-            Band for coadd, if None return all band coadd
+            Band for coadd, if None return coadd over all bands
 
         Returns
         -------
@@ -73,7 +73,7 @@ class MultiBandCoadds(object):
 
     def _make_exps(self):
         """
-        make lsst stack exposures for each image
+        make lsst stack exposures for each image and noise image
         """
 
         exps = []
@@ -143,7 +143,9 @@ class MultiBandCoadds(object):
         self._byband_noise_exps = byband_noise_exps
 
     def _make_coadds(self):
-
+        """
+        make all coadds
+        """
         # dict are now ordered since python 3.6
         self.coadds = {}
 
@@ -165,6 +167,9 @@ class MultiBandCoadds(object):
 
 
 class CoaddObs(ngmix.Observation):
+    """
+    make coadd exposure for the input exposures and noise exposures
+    """
     def __init__(self, *,
                  exps,
                  noise_exps,
@@ -183,6 +188,9 @@ class CoaddObs(ngmix.Observation):
         self._finish_init()
 
     def _make_coadds(self):
+        """
+        make warps and coadds for images and noise fields
+        """
         image_data = self._make_warps('image')
         self.coadd_exp = self._make_coadd(**image_data)
 
@@ -269,7 +277,7 @@ class CoaddObs(ngmix.Observation):
 
     def _make_coadd(self, *, wexps, weights, input_recorder, psf_config):
         """
-        make the coadd from warp images, as well as psf coadd
+        make a coadd from warp images, as well as psf coadd
         """
 
         # combine stack images using mean
@@ -298,6 +306,11 @@ class CoaddObs(ngmix.Observation):
         return stacked_exp
 
     def _get_jac(self, *, cenx, ceny):
+        """
+        get jacobian at the coadd image center, and make
+        an ngmix jacobian with center specified (this is not the
+        position used to evaluate the jacobian)
+        """
         import galsim
 
         crpix = self._galsim_wcs.crpix
@@ -315,7 +328,9 @@ class CoaddObs(ngmix.Observation):
         )
 
     def _get_psf_obs(self):
-
+        """
+        get the psf observation
+        """
         crpix = self._galsim_wcs.crpix
         stack_pos = geom.Point2D(crpix[0], crpix[1])
 
@@ -335,6 +350,10 @@ class CoaddObs(ngmix.Observation):
         )
 
     def _finish_init(self):
+        """
+        finish the init by sending the image etc. to the
+        Observation init
+        """
         psf_obs = self._get_psf_obs()  # noqa
 
         image = self.coadd_exp.image.array
