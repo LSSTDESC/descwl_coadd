@@ -359,12 +359,27 @@ class CoaddObs(ngmix.Observation):
         image = self.coadd_exp.image.array
         noise = self.coadd_noise_exp.image.array
 
-        var = self.coadd_exp.variance.array
-        w = np.where(np.isfinite(var))
+        var = self.coadd_exp.variance.array.copy()
+        print('var:', var)
+        wnf = np.where(~np.isfinite(var))
+        if wnf[0].size > 0:
+            var[wnf] = -1
 
-        weight = var*0
+
+        weight = var.copy()
+        weight[:, :] = 0.0
+
+        w = np.where(var > 0)
         if w[0].size > 0:
             weight[w] = np.sqrt(1.0/var[w])
+
+            if w[0].size != image.size:
+                wbad = np.where(var <= 0)
+                medval = np.median(weight[w])
+                print('medval:', medval)
+                weight[wbad] = medval
+        else:
+            print('no good variance values')
 
         cen = (np.array(image.shape)-1)/2
         jac = self._get_jac(cenx=cen[1], ceny=cen[0])
