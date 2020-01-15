@@ -76,6 +76,8 @@ class MultiBandCoadds(object):
         make lsst stack exposures for each image and noise image
         """
 
+        from lsst.afw.cameraGeom.testUtils import DetectorWrapper
+
         exps = []
         noise_exps = []
         byband_exps = {}
@@ -149,6 +151,10 @@ class MultiBandCoadds(object):
                 # band_exp.setWcs(make_stack_wcs(wcs))
                 nexp.setWcs(make_stack_wcs(wcs))
                 # band_nexp.setWcs(make_stack_wcs(wcs))
+
+                detector = DetectorWrapper().detector
+                exp.setDetector(detector)
+                nexp.setDetector(detector)
 
                 exps.append(exp)
                 noise_exps.append(nexp)
