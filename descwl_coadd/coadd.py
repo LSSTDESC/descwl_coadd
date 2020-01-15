@@ -101,7 +101,6 @@ class MultiBandCoadds(object):
 
                 psf_image = se_obs.get_psf(pos.x, pos.y).array
 
-
                 # TODO: deal with zeros
                 w = np.where(weight > 0)
                 assert w[0].size == weight.size
