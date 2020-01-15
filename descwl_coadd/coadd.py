@@ -78,6 +78,8 @@ class MultiBandCoadds(object):
 
         from lsst.afw.cameraGeom.testUtils import DetectorWrapper
 
+        cwcs = self._coadd_wcs
+
         exps = []
         noise_exps = []
         byband_exps = {}
@@ -91,21 +93,19 @@ class MultiBandCoadds(object):
             for epoch_ind, se_obs in enumerate(bdata):
 
                 wcs = se_obs.wcs
-                crpix = wcs.crpix
-
-                cenx, ceny = crpix
+                pos = wcs.toImage(cwcs.center)
 
                 image = se_obs.image.array
                 noise = se_obs.noise.array
                 weight = se_obs.weight.array
 
-                # TODO:  get this at the center of coadd
-                psf_image = se_obs.get_psf(cenx, ceny).array
+                psf_image = se_obs.get_psf(pos.x, pos.y).array
 
-                # TODO:  do this better, could be zeros, not uniform, etc
+
+                # TODO: deal with zeros
                 w = np.where(weight > 0)
-                assert w[0].size > 0
-                noise_var = 1.0/weight[w[0][0], w[1][0]]
+                assert w[0].size == weight.size
+                noise_var = 1.0/weight
 
                 sy, sx = image.shape
 
@@ -115,42 +115,19 @@ class MultiBandCoadds(object):
                 masked_image.variance.array[:, :] = noise_var
                 masked_image.mask.array[:, :] = 0
 
-                # need separate ones, stack coadd code modifies things
-                # internally
-                """
-                band_masked_image = afw_image.MaskedImageF(sx, sy)
-                band_masked_image.image.array[:, :] = image
-                band_masked_image.variance.array[:, :] = noise_var
-                band_masked_image.mask.array[:, :] = 0
-                """
-
                 nmasked_image = afw_image.MaskedImageF(sx, sy)
                 nmasked_image.image.array[:, :] = noise
                 nmasked_image.variance.array[:, :] = noise_var
                 nmasked_image.mask.array[:, :] = 0
 
-                """
-                band_nmasked_image = afw_image.MaskedImageF(sx, sy)
-                band_nmasked_image.image.array[:, :] = noise
-                band_nmasked_image.variance.array[:, :] = noise_var
-                band_nmasked_image.mask.array[:, :] = 0
-                """
-
                 exp = afw_image.ExposureF(masked_image)
-                # band_exp = afw_image.ExposureF(band_masked_image)
                 nexp = afw_image.ExposureF(nmasked_image)
-                # band_nexp = afw_image.ExposureF(band_nmasked_image)
 
                 exp.setPsf(make_stack_psf(psf_image))
-                # band_exp.setPsf(make_stack_psf(psf_image))
                 nexp.setPsf(make_stack_psf(psf_image))
-                # band_nexp.setPsf(make_stack_psf(psf_image))
 
-                # set single WCS
                 exp.setWcs(make_stack_wcs(wcs))
-                # band_exp.setWcs(make_stack_wcs(wcs))
                 nexp.setWcs(make_stack_wcs(wcs))
-                # band_nexp.setWcs(make_stack_wcs(wcs))
 
                 detector = DetectorWrapper().detector
                 exp.setDetector(detector)
@@ -158,9 +135,7 @@ class MultiBandCoadds(object):
 
                 exps.append(exp)
                 noise_exps.append(nexp)
-                # byband_exps[band].append(band_exp)
                 byband_exps[band].append(exp)
-                # byband_noise_exps[band].append(band_nexp)
                 byband_noise_exps[band].append(nexp)
 
         self._exps = exps
@@ -311,8 +286,8 @@ class CoaddObs(ngmix.Observation):
         stacked_image = afw_math.statisticsStack(
             masked_images, stats_flags, stats_ctrl, weights, 0, 0)
 
-        stacked_exp = afw_image.ExposureF(stacked_image)
-        stacked_exp.setWcs(self.coadd_wcs)
+        stacked_exp = afw_image.ExposureF(stacked_image, self.coadd_wcs)
+        # stacked_exp.setWcs(self.coadd_wcs)
         stacked_exp.getInfo().setCoaddInputs(input_recorder.makeCoaddInputs())
         coadd_inputs = stacked_exp.getInfo().getCoaddInputs()
 
