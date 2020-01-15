@@ -198,8 +198,8 @@ class CoaddObs(ngmix.Observation):
 
         self._exps = exps
         self._noise_exps = noise_exps
-        self._galsim_wcs = coadd_wcs
-        self._coadd_wcs = make_stack_wcs(coadd_wcs)
+        self.galsim_wcs = coadd_wcs
+        self.coadd_wcs = make_stack_wcs(coadd_wcs)
         self._coadd_dims = coadd_dims
 
         self._interp = 'lanczos3'
@@ -264,7 +264,7 @@ class CoaddObs(ngmix.Observation):
             weight_list.append(weight)
 
             wexp = warper.warpExposure(
-                self._coadd_wcs,
+                self.coadd_wcs,
                 exp,
                 maxBBox=exp.getBBox(),
                 destBBox=sky_box,
@@ -277,7 +277,7 @@ class CoaddObs(ngmix.Observation):
 
             warp_psf = CoaddPsf(
                 ir_warp.coaddInputs.ccds,
-                self._coadd_wcs,
+                self.coadd_wcs,
                 coadd_psf_config.makeControl(),
             )
             wexp.getInfo().setCoaddInputs(ir_warp.coaddInputs)
@@ -306,6 +306,7 @@ class CoaddObs(ngmix.Observation):
             masked_images, stats_flags, stats_ctrl, weights, 0, 0)
 
         stacked_exp = afw_image.ExposureF(stacked_image)
+        stacked_exp.setWcs(self.coadd_wcs)
         stacked_exp.getInfo().setCoaddInputs(input_recorder.makeCoaddInputs())
         coadd_inputs = stacked_exp.getInfo().getCoaddInputs()
 
@@ -315,7 +316,7 @@ class CoaddObs(ngmix.Observation):
 
         coadd_psf = CoaddPsf(
             coadd_inputs.ccds,
-            self._coadd_wcs,
+            self.coadd_wcs,
             psf_config.makeControl(),
         )
         stacked_exp.setPsf(coadd_psf)
@@ -330,10 +331,10 @@ class CoaddObs(ngmix.Observation):
         """
         import galsim
 
-        crpix = self._galsim_wcs.crpix
+        crpix = self.galsim_wcs.crpix
         galsim_pos = galsim.PositionD(x=crpix[0], y=crpix[1])
 
-        galsim_jac = self._galsim_wcs.jacobian(image_pos=galsim_pos)
+        galsim_jac = self.galsim_wcs.jacobian(image_pos=galsim_pos)
 
         return ngmix.Jacobian(
             x=cenx,
@@ -348,7 +349,7 @@ class CoaddObs(ngmix.Observation):
         """
         get the psf observation
         """
-        crpix = self._galsim_wcs.crpix
+        crpix = self.galsim_wcs.crpix
         stack_pos = geom.Point2D(crpix[0], crpix[1])
 
         psf_obj = self.coadd_exp.getPsf()
@@ -377,8 +378,13 @@ class CoaddObs(ngmix.Observation):
         noise = self.coadd_noise_exp.image.array
 
         var = self.coadd_exp.variance.array.copy()
-        print('var:', var)
+        # print('var:', var)
+        # print('image:', image)
         wnf = np.where(~np.isfinite(var))
+
+        if wnf[0].size == image.size:
+            raise ValueError('no good variance values')
+
         if wnf[0].size > 0:
             var[wnf] = -1
 
@@ -386,16 +392,14 @@ class CoaddObs(ngmix.Observation):
         weight[:, :] = 0.0
 
         w = np.where(var > 0)
-        if w[0].size > 0:
-            weight[w] = 1.0/var[w]
+        weight[w] = 1.0/var[w]
 
-            if w[0].size != image.size:
-                wbad = np.where(var <= 0)
-                medval = np.median(weight[w])
-                print('medval:', medval)
-                weight[wbad] = medval
-        else:
-            print('no good variance values')
+        if wnf[0].size > 0:
+            # medval = np.sqrt(np.median(var[w]))
+            # weight[wbad] = medval
+            # TODO: add noise instead based on medval, need to send in rng
+            image[wnf] = 0.0
+            noise[wnf] = 0.0
 
         cen = (np.array(image.shape)-1)/2
         jac = self._get_jac(cenx=cen[1], ceny=cen[0])
