@@ -236,6 +236,7 @@ class CoaddObs(ngmix.Observation):
 
             # Compute variance weight
             stats_ctrl = afw_math.StatisticsControl()
+            stats_ctrl.setCalcErrorFromInputVariance(True)
             stat_obj = afw_math.makeStatistics(
                 exp.variance,
                 exp.mask,
@@ -283,6 +284,7 @@ class CoaddObs(ngmix.Observation):
         # combine stack images using mean
         stats_flags = afw_math.stringToStatisticsProperty("MEAN")
         stats_ctrl = afw_math.StatisticsControl()
+        stats_ctrl.setCalcErrorFromInputVariance(True)
 
         masked_images = [w.getMaskedImage() for w in wexps]
         stacked_image = afw_math.statisticsStack(
@@ -364,7 +366,6 @@ class CoaddObs(ngmix.Observation):
         wnf = np.where(~np.isfinite(var))
         if wnf[0].size > 0:
             var[wnf] = -1
-
 
         weight = var.copy()
         weight[:, :] = 0.0
