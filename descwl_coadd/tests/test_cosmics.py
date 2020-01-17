@@ -1,7 +1,11 @@
 import numpy as np
 
 from descwl_shear_sims import Sim
-from ..coadd import MultiBandCoadds
+from ..coadd import (
+    MultiBandCoadds,
+    make_stack_psf,
+    repair_exp,
+)
 
 
 def get_cosmic_flag():
@@ -46,3 +50,61 @@ def test_cosmics():
         # currently just make sure there are not too many
         # TODO: tune the finder so it finds none?
         assert w[0].size < 5
+        """
+        if w[0].size > 0:
+            import fitsio
+            fitsio.write('/tmp/tmp.fits', nexp.image.array, clobber=True)
+            print('indices:', w)
+            print('values:', nexp.image.array[w])
+            stop
+        assert 1 == 0
+        """
+
+
+def test_noise_cosmics():
+    """
+    very simple version not using the main sim
+    """
+
+    import lsst.afw.image as afw_image
+    import galsim
+
+    psf_image = galsim.Gaussian(fwhm=0.9).drawImage(
+        scale=0.263,
+    ).array
+
+    noise = 180.0
+    sx, sy = 500, 500
+
+    rng = np.random.RandomState(9763)
+
+    stack_image = afw_image.MaskedImageF(sx, sy)
+    stack_image.image.array[:, :] = rng.normal(
+        scale=noise,
+        size=(sy, sx),
+    )
+
+    stack_image.variance.array[:, :] = noise**2
+    stack_image.mask.array[:, :] = 0
+    exp = afw_image.ExposureF(stack_image)
+
+    exp.setPsf(make_stack_psf(psf_image))
+
+    repair_exp(exp)
+
+    cosmic_flag = get_cosmic_flag()
+
+    bmask = exp.mask.array
+
+    w = np.where((bmask & cosmic_flag) != 0)
+
+    print('found:', w[0].size, 'cosmics in noise')
+    if w[0].size > 0:
+        # import fitsio
+        # fitsio.write('/tmp/tmp.fits', nexp.image.array, clobber=True)
+        print('indices:', w)
+        print('values:', exp.image.array[w])
+
+    # for now don't require 0, until we figure out why its finding
+    # cosmics in the noise
+    assert w[0].size < 5
