@@ -132,6 +132,9 @@ class MultiBandCoadds(object):
                 exp.setDetector(detector)
                 nexp.setDetector(detector)
 
+                repair_exp(exp)
+                repair_exp(nexp)
+
                 exps.append(exp)
                 noise_exps.append(nexp)
                 byband_exps[band].append(exp)
@@ -424,3 +427,14 @@ def make_stack_wcs(wcs):
         crval=crval,
         cdMatrix=cd_matrix,
     )
+
+
+def repair_exp(exp):
+    """
+    run a RepairTask, currently not sending defects just
+    finding cosmics and interpolating them
+    """
+    from lsst.pipe.tasks.repair import RepairTask, RepairConfig
+    repair_config = RepairConfig()
+    repair_task = RepairTask(config=repair_config)
+    repair_task.run(exposure=exp)
