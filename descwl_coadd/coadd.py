@@ -99,7 +99,11 @@ class MultiBandCoadds(object):
                 noise = se_obs.noise.array
                 weight = se_obs.weight.array
 
-                psf_image = se_obs.get_psf(pos.x, pos.y).array
+                psf_image = se_obs.get_psf(
+                    pos.x,
+                    pos.y,
+                    center_psf=True,
+                ).array
 
                 # TODO: deal with zeros
                 w = np.where(weight > 0)
