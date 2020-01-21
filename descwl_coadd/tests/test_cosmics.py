@@ -10,9 +10,7 @@ from ..coadd import (
 
 def get_cosmic_flag():
     import lsst.afw.image as afw_image
-
-    mask = afw_image.Mask()
-    return 2**mask.getMaskPlane('CR')
+    return 2**afw_image.Mask.getMaskPlane('CR')
 
 
 def test_cosmics():
@@ -35,30 +33,15 @@ def test_cosmics():
         coadd_dims=coadd_dims,
     )
 
-    for exp in coadds._exps:
+    for exp, nexp in zip(coadds.exps, coadds.noise_exps):
         bmask = exp.mask.array
+        noise_bmask = nexp.mask.array
 
         w = np.where((bmask & cosmic_flag) != 0)
-        print('found:', w[0].size, 'in image')
         assert w[0].size != 0
 
-    for nexp in coadds._noise_exps:
-        bmask = nexp.mask.array
-
-        w = np.where((bmask & cosmic_flag) != 0)
-        print('found:', w[0].size, 'in noise')
-        # currently just make sure there are not too many
-        # TODO: tune the finder so it finds none?
-        assert w[0].size < 5
-        """
-        if w[0].size > 0:
-            import fitsio
-            fitsio.write('/tmp/tmp.fits', nexp.image.array, clobber=True)
-            print('indices:', w)
-            print('values:', nexp.image.array[w])
-            stop
-        assert 1 == 0
-        """
+        w = np.where((noise_bmask & cosmic_flag) != 0)
+        assert w[0].size != 0
 
 
 def test_noise_cosmics():
