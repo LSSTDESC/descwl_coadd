@@ -290,6 +290,8 @@ class CoaddObs(ngmix.Observation):
         stats_flags = afw_math.stringToStatisticsProperty("MEAN")
         stats_ctrl = afw_math.StatisticsControl()
         stats_ctrl.setCalcErrorFromInputVariance(True)
+        badmask = afw_image.Mask.getPlaneBitMask(['EDGE'])
+        stats_ctrl.setAndMask(badmask)
 
         masked_images = [w.getMaskedImage() for w in wexps]
         stacked_image = afw_math.statisticsStack(
