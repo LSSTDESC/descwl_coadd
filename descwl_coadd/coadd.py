@@ -97,6 +97,8 @@ class MultiBandCoadds(object):
 
                 image = se_obs.image.array
                 noise = se_obs.noise.array
+                bmask = se_obs.bmask.array
+
                 weight = se_obs.weight.array
 
                 psf_image = se_obs.get_psf(
@@ -112,16 +114,15 @@ class MultiBandCoadds(object):
 
                 sy, sx = image.shape
 
-                # TODO:  look for real mask
                 masked_image = afw_image.MaskedImageF(sx, sy)
                 masked_image.image.array[:, :] = image
                 masked_image.variance.array[:, :] = noise_var
-                masked_image.mask.array[:, :] = 0
+                masked_image.mask.array[:, :] = bmask
 
                 nmasked_image = afw_image.MaskedImageF(sx, sy)
                 nmasked_image.image.array[:, :] = noise
                 nmasked_image.variance.array[:, :] = noise_var
-                nmasked_image.mask.array[:, :] = 0
+                nmasked_image.mask.array[:, :] = bmask
 
                 exp = afw_image.ExposureF(masked_image)
                 nexp = afw_image.ExposureF(nmasked_image)
