@@ -202,6 +202,8 @@ class CoaddObs(ngmix.Observation):
         image_data = self._make_warps(self._exps)
         self.coadd_exp = self._make_coadd(**image_data)
 
+        # show_image(self.coadd_exp.mask.array)
+
         noise_data = self._make_warps(self._noise_exps)
         self.coadd_noise_exp = self._make_coadd(**noise_data)
 
@@ -438,6 +440,15 @@ def repair_exp(exp, show=False, zero_edges=False):
     """
     run a RepairTask, currently not sending defects just
     finding cosmics and interpolating them
+
+    Parameters
+    ----------
+    exp:
+        an Exposure from the stack
+    zero_edges: bool
+        If True, zero out the edges.
+    show: bool
+        If True, show the image
     """
     from lsst.pipe.tasks.repair import RepairTask, RepairConfig
 
@@ -447,10 +458,10 @@ def repair_exp(exp, show=False, zero_edges=False):
 
     if zero_edges:
         ny, nx = exp.image.array.shape
-        exp.image.array[0:2, :] = 0
-        exp.image.array[ny-2:, :] = 0
-        exp.image.array[:, 0:2] = 0
-        exp.image.array[:, nx-2:] = 0
+        exp.image.array[0:1, :] = 0
+        exp.image.array[ny-1:, :] = 0
+        exp.image.array[:, 0:1] = 0
+        exp.image.array[:, nx-1:] = 0
 
     repair_config = RepairConfig()
     repair_task = RepairTask(config=repair_config)
