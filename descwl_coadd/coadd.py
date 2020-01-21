@@ -38,10 +38,10 @@ class MultiBandCoadds(object):
                  coadd_dims,
                  byband=True):
 
-        self._data = data
-        self._coadd_wcs = coadd_wcs
-        self._coadd_dims = coadd_dims
-        self._byband = byband
+        self.data = data
+        self.coadd_wcs = coadd_wcs
+        self.coadd_dims = coadd_dims
+        self.byband = byband
 
         self._make_exps()
         self._make_coadds()
@@ -51,7 +51,7 @@ class MultiBandCoadds(object):
         """
         get list of bands
         """
-        return [k for k in self._data]
+        return [k for k in self.data]
 
     def get_coadd(self, band=None):
         """
@@ -78,15 +78,15 @@ class MultiBandCoadds(object):
 
         from lsst.afw.cameraGeom.testUtils import DetectorWrapper
 
-        cwcs = self._coadd_wcs
+        cwcs = self.coadd_wcs
 
         exps = []
         noise_exps = []
         byband_exps = {}
         byband_noise_exps = {}
 
-        for band in self._data:
-            bdata = self._data[band]
+        for band in self.data:
+            bdata = self.data[band]
             byband_exps[band] = []
             byband_noise_exps[band] = []
 
@@ -138,6 +138,7 @@ class MultiBandCoadds(object):
                 nexp.setDetector(detector)
 
                 repair_exp(exp)
+                add_cosmics_to_noise(exp=exp, noise_exp=nexp)
                 repair_exp(nexp)
 
                 exps.append(exp)
@@ -145,10 +146,10 @@ class MultiBandCoadds(object):
                 byband_exps[band].append(exp)
                 byband_noise_exps[band].append(nexp)
 
-        self._exps = exps
-        self._noise_exps = noise_exps
-        self._byband_exps = byband_exps
-        self._byband_noise_exps = byband_noise_exps
+        self.exps = exps
+        self.noise_exps = noise_exps
+        self.byband_exps = byband_exps
+        self.byband_noise_exps = byband_noise_exps
 
     def _make_coadds(self):
         """
@@ -157,20 +158,20 @@ class MultiBandCoadds(object):
         # dict are now ordered since python 3.6
         self.coadds = {}
 
-        if self._byband:
-            for band in self._byband_exps:
+        if self.byband:
+            for band in self.byband_exps:
                 self.coadds[band] = CoaddObs(
-                    exps=self._byband_exps[band],
-                    noise_exps=self._byband_noise_exps[band],
-                    coadd_wcs=self._coadd_wcs,
-                    coadd_dims=self._coadd_dims,
+                    exps=self.byband_exps[band],
+                    noise_exps=self.byband_noise_exps[band],
+                    coadd_wcs=self.coadd_wcs,
+                    coadd_dims=self.coadd_dims,
                 )
 
         self.coadds['all'] = CoaddObs(
-            exps=self._exps,
-            noise_exps=self._noise_exps,
-            coadd_wcs=self._coadd_wcs,
-            coadd_dims=self._coadd_dims,
+            exps=self.exps,
+            noise_exps=self.noise_exps,
+            coadd_wcs=self.coadd_wcs,
+            coadd_dims=self.coadd_dims,
         )
 
 
@@ -184,13 +185,13 @@ class CoaddObs(ngmix.Observation):
                  coadd_wcs,
                  coadd_dims):
 
-        self._exps = exps
-        self._noise_exps = noise_exps
+        self.exps = exps
+        self.noise_exps = noise_exps
         self.galsim_wcs = coadd_wcs
         self.coadd_wcs = make_stack_wcs(coadd_wcs)
-        self._coadd_dims = coadd_dims
+        self.coadd_dims = coadd_dims
 
-        self._interp = 'lanczos3'
+        self.interp = 'lanczos3'
 
         self._make_coadds()
         self._finish_init()
@@ -199,12 +200,12 @@ class CoaddObs(ngmix.Observation):
         """
         make warps and coadds for images and noise fields
         """
-        image_data = self._make_warps(self._exps)
+        image_data = self._make_warps(self.exps)
         self.coadd_exp = self._make_coadd(**image_data)
 
         # show_image(self.coadd_exp.mask.array)
 
-        noise_data = self._make_warps(self._noise_exps)
+        noise_data = self._make_warps(self.noise_exps)
         self.coadd_noise_exp = self._make_coadd(**noise_data)
 
     def _make_warps(self, exps):
@@ -219,17 +220,17 @@ class CoaddObs(ngmix.Observation):
             config=input_recorder_config, name="dummy",
         )
         coadd_psf_config = CoaddPsfConfig()
-        coadd_psf_config.warpingKernelName = self._interp
+        coadd_psf_config.warpingKernelName = self.interp
 
         # warp stack images to coadd wcs
         warp_config = afw_math.Warper.ConfigClass()
 
         # currently allows up to lanczos5, but a small change would allow
         # higher order
-        warp_config.warpingKernelName = self._interp
+        warp_config.warpingKernelName = self.interp
         warper = afw_math.Warper.fromConfig(warp_config)
 
-        nx, ny = self._coadd_dims
+        nx, ny = self.coadd_dims
         sky_box = geom.Box2I(
             geom.Point2I(0, 0),
             geom.Point2I(nx-1, ny-1),
@@ -472,6 +473,20 @@ def repair_exp(exp, show=False, zero_edges=False):
     if show:
         print('after repair')
         show_image(exp.image.array)
+
+
+def add_cosmics_to_noise(*, exp, noise_exp, value=1.0e18):
+    """
+    add fake cosmics to the noise exposure wherever
+    they are set in the real image
+
+    TODO: get a realistic value for the real data
+    """
+
+    CR = 2**afw_image.Mask.getMaskPlane('CR')  # noqa
+    w = np.where((exp.mask.array & CR) != 0)
+    if w[0].size > 0:
+        noise_exp.image.array[w] = value
 
 
 def show_image(image):
