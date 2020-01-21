@@ -433,12 +433,41 @@ def make_stack_wcs(wcs):
     )
 
 
-def repair_exp(exp):
+def repair_exp(exp, show=False, zero_edges=False):
     """
     run a RepairTask, currently not sending defects just
     finding cosmics and interpolating them
     """
     from lsst.pipe.tasks.repair import RepairTask, RepairConfig
+
+    if show:
+        print('before repair')
+        show_image(exp.image.array)
+
+    if zero_edges:
+        ny, nx = exp.image.array.shape
+        exp.image.array[0:2, :] = 0
+        exp.image.array[ny-2:, :] = 0
+        exp.image.array[:, 0:2] = 0
+        exp.image.array[:, nx-2:] = 0
+
     repair_config = RepairConfig()
     repair_task = RepairTask(config=repair_config)
     repair_task.run(exposure=exp)
+
+    if show:
+        print('after repair')
+        show_image(exp.image.array)
+
+
+def show_image(image):
+    """
+    show an image
+    """
+    import matplotlib.pyplot as plt
+    plt.imshow(
+        image,
+        interpolation='nearest',
+        cmap='gray',
+    )
+    plt.show()
