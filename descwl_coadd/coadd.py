@@ -15,6 +15,8 @@ from lsst.meas.algorithms import CoaddPsf, CoaddPsfConfig
 import coord
 import ngmix
 
+from . import vis
+
 
 class MultiBandCoadds(object):
     """
@@ -137,9 +139,10 @@ class MultiBandCoadds(object):
                 exp.setDetector(detector)
                 nexp.setDetector(detector)
 
-                repair_exp(exp)
                 add_cosmics_to_noise(exp=exp, noise_exp=nexp)
-                repair_exp(nexp)
+
+                repair_exp(exp)
+                repair_exp(nexp, show=False)
 
                 exps.append(exp)
                 noise_exps.append(nexp)
@@ -196,14 +199,23 @@ class CoaddObs(ngmix.Observation):
         self._make_coadds()
         self._finish_init()
 
+        if False:
+            vis.show_images(
+                [
+                    self.image,
+                    self.coadd_exp.mask.array,
+                    self.noise,
+                    self.coadd_noise_exp.mask.array,
+                    # self.weight,
+                ],
+            )
+
     def _make_coadds(self):
         """
         make warps and coadds for images and noise fields
         """
         image_data = self._make_warps(self.exps)
         self.coadd_exp = self._make_coadd(**image_data)
-
-        # show_image(self.coadd_exp.mask.array)
 
         noise_data = self._make_warps(self.noise_exps)
         self.coadd_noise_exp = self._make_coadd(**noise_data)
@@ -439,7 +451,7 @@ def make_stack_wcs(wcs):
     )
 
 
-def repair_exp(exp, show=False, zero_edges=False):
+def repair_exp(exp, show=False, border_size=None):
     """
     run a RepairTask, currently not sending defects just
     finding cosmics and interpolating them
@@ -448,8 +460,8 @@ def repair_exp(exp, show=False, zero_edges=False):
     ----------
     exp:
         an Exposure from the stack
-    zero_edges: bool
-        If True, zero out the edges.
+    border_size: bool
+        border size to zero
     show: bool
         If True, show the image
     """
@@ -457,14 +469,15 @@ def repair_exp(exp, show=False, zero_edges=False):
 
     if show:
         print('before repair')
-        show_image(exp.image.array)
+        vis.show_image(exp.image.array)
 
-    if zero_edges:
+    if border_size is not None:
+        b = border_size
         ny, nx = exp.image.array.shape
-        exp.image.array[0:1, :] = 0
-        exp.image.array[ny-1:, :] = 0
-        exp.image.array[:, 0:1] = 0
-        exp.image.array[:, nx-1:] = 0
+        exp.image.array[0:b, :] = 0
+        exp.image.array[ny-b:, :] = 0
+        exp.image.array[:, 0:b] = 0
+        exp.image.array[:, nx-b:] = 0
 
     repair_config = RepairConfig()
     repair_task = RepairTask(config=repair_config)
@@ -472,7 +485,7 @@ def repair_exp(exp, show=False, zero_edges=False):
 
     if show:
         print('after repair')
-        show_image(exp.image.array)
+        vis.show_image(exp.image.array)
 
 
 def add_cosmics_to_noise(*, exp, noise_exp, value=1.0e18):
@@ -487,16 +500,3 @@ def add_cosmics_to_noise(*, exp, noise_exp, value=1.0e18):
     w = np.where((exp.mask.array & CR) != 0)
     if w[0].size > 0:
         noise_exp.image.array[w] = value
-
-
-def show_image(image):
-    """
-    show an image
-    """
-    import matplotlib.pyplot as plt
-    plt.imshow(
-        image,
-        interpolation='nearest',
-        cmap='gray',
-    )
-    plt.show()
