@@ -11,6 +11,7 @@ from lsst.pipe.tasks.coaddInputRecorder import (
     CoaddInputRecorderConfig,
 )
 from lsst.meas.algorithms import CoaddPsf, CoaddPsfConfig
+import lsst.log
 
 import coord
 import ngmix
@@ -46,6 +47,8 @@ class MultiBandCoadds(object):
                  coadd_dims,
                  byband=True,
                  use_stack_interp=False):
+
+        self.log = lsst.log.getLogger("MultiBandCoadds")
 
         self.data = data
         self.coadd_wcs = coadd_wcs
@@ -87,6 +90,8 @@ class MultiBandCoadds(object):
         """
 
         from lsst.afw.cameraGeom.testUtils import DetectorWrapper
+
+        self.log.info('making exps')
 
         cwcs = self.coadd_wcs
 
@@ -178,6 +183,8 @@ class MultiBandCoadds(object):
         """
         make all coadds
         """
+        self.log.info('making coadds')
+
         # dict are now ordered since python 3.6
         self.coadds = {}
 
