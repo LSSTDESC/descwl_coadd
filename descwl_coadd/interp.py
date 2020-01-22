@@ -1,3 +1,6 @@
+"""
+code copied from https://github.com/beckermr/pizza-cutter/
+"""
 import numpy as np
 from scipy.interpolate import CloughTocher2DInterpolator
 
