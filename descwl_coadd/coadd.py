@@ -16,6 +16,12 @@ import coord
 import ngmix
 
 from . import vis
+from .interp import interpolate_image_and_noise
+
+FLAGS2INTERP = (
+    2**afw_image.Mask.getMaskPlane('BAD') |
+    2**afw_image.Mask.getMaskPlane('CR')
+)
 
 
 class MultiBandCoadds(object):
@@ -38,12 +44,14 @@ class MultiBandCoadds(object):
                  data,
                  coadd_wcs,
                  coadd_dims,
-                 byband=True):
+                 byband=True,
+                 use_stack_interp=False):
 
         self.data = data
         self.coadd_wcs = coadd_wcs
         self.coadd_dims = coadd_dims
         self.byband = byband
+        self.use_stack_interp = use_stack_interp
 
         self._make_exps()
         self._make_coadds()
@@ -100,6 +108,16 @@ class MultiBandCoadds(object):
                 image = se_obs.image.array
                 noise = se_obs.noise.array
                 bmask = se_obs.bmask.array
+                weight = se_obs.weight.array
+
+                if not self.use_stack_interp:
+                    image, noise = interpolate_image_and_noise(
+                        image=image,
+                        noise=noise,
+                        weight=weight,
+                        bmask=bmask,
+                        bad_flags=FLAGS2INTERP,
+                    )
 
                 weight = se_obs.weight.array
 
@@ -139,10 +157,12 @@ class MultiBandCoadds(object):
                 exp.setDetector(detector)
                 nexp.setDetector(detector)
 
-                add_cosmics_to_noise(exp=exp, noise_exp=nexp)
+                if self.use_stack_interp:
+                    add_cosmics_to_noise(exp=exp, noise_exp=nexp)
+                    add_badcols_to_noise(exp=exp, noise_exp=nexp)
 
-                repair_exp(exp)
-                repair_exp(nexp, show=False)
+                    repair_exp(exp, show=False)
+                    repair_exp(nexp, show=False)
 
                 exps.append(exp)
                 noise_exps.append(nexp)
@@ -498,5 +518,19 @@ def add_cosmics_to_noise(*, exp, noise_exp, value=1.0e18):
 
     CR = 2**afw_image.Mask.getMaskPlane('CR')  # noqa
     w = np.where((exp.mask.array & CR) != 0)
+    print('pixels for cosmics:', w[0].size)
     if w[0].size > 0:
         noise_exp.image.array[w] = value
+
+
+def add_badcols_to_noise(*, exp, noise_exp):
+    """
+    Set bad cols in the noise image based on the real
+    image bits
+    """
+
+    BAD = 2**afw_image.Mask.getMaskPlane('BAD')  # noqa
+    w = np.where((exp.mask.array & BAD) != 0)
+    print('pixels for badcols:', w[0].size)
+    if w[0].size > 0:
+        noise_exp.image.array[w] = exp.image.array[w]
