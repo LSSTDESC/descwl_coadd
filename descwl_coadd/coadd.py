@@ -46,8 +46,10 @@ class MultiBandCoadds(object):
                  coadd_wcs,
                  coadd_dims,
                  byband=True,
-                 use_stack_interp=False):
+                 use_stack_interp=False,
+                 show=False):
 
+        self._show = show
         self.log = lsst.log.getLogger("MultiBandCoadds")
 
         self.data = data
@@ -123,6 +125,12 @@ class MultiBandCoadds(object):
                         bmask=bmask,
                         bad_flags=FLAGS2INTERP,
                     )
+                    if self._show:
+                        vis.show_images([
+                            image,
+                            bmask,
+                            noise,
+                        ])
 
                 weight = se_obs.weight.array
 
@@ -203,6 +211,8 @@ class MultiBandCoadds(object):
             coadd_wcs=self.coadd_wcs,
             coadd_dims=self.coadd_dims,
         )
+        if self._show:
+            self.coadds['all'].show()
 
 
 class CoaddObs(ngmix.Observation):
@@ -226,16 +236,16 @@ class CoaddObs(ngmix.Observation):
         self._make_coadds()
         self._finish_init()
 
-        if False:
-            vis.show_images(
-                [
-                    self.image,
-                    self.coadd_exp.mask.array,
-                    self.noise,
-                    self.coadd_noise_exp.mask.array,
-                    # self.weight,
-                ],
-            )
+    def show(self):
+        vis.show_images(
+            [
+                self.image,
+                self.coadd_exp.mask.array,
+                self.noise,
+                self.coadd_noise_exp.mask.array,
+                # self.weight,
+            ],
+        )
 
     def _make_coadds(self):
         """
