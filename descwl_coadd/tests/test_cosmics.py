@@ -26,11 +26,12 @@ def test_cosmics():
     data = sim.gen_sim()
 
     # coadding individual bands as well as over bands
-    coadd_dims = (sim.coadd_dim, )*2
     coadds = MultiBandCoadds(
         data=data,
         coadd_wcs=sim.coadd_wcs,
-        coadd_dims=coadd_dims,
+        coadd_dims=sim.coadd_dims,
+        coadd_psf_wcs=sim.coadd_psf_wcs,
+        coadd_psf_dims=sim.coadd_psf_dims,
     )
 
     for exp, nexp in zip(coadds.exps, coadds.noise_exps):

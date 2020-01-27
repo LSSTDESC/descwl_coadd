@@ -10,7 +10,7 @@ from lsst.pipe.tasks.coaddInputRecorder import (
     CoaddInputRecorderTask,
     CoaddInputRecorderConfig,
 )
-from lsst.meas.algorithms import CoaddPsf, CoaddPsfConfig
+# from lsst.meas.algorithms import CoaddPsf, CoaddPsfConfig
 import lsst.log
 
 import coord
@@ -45,6 +45,8 @@ class MultiBandCoadds(object):
                  data,
                  coadd_wcs,
                  coadd_dims,
+                 coadd_psf_wcs,
+                 coadd_psf_dims,
                  byband=True,
                  use_stack_interp=False,
                  show=False):
@@ -55,6 +57,10 @@ class MultiBandCoadds(object):
         self.data = data
         self.coadd_wcs = coadd_wcs
         self.coadd_dims = coadd_dims
+
+        self.coadd_psf_wcs = coadd_psf_wcs
+        self.coadd_psf_dims = coadd_psf_dims
+
         self.byband = byband
         self.use_stack_interp = use_stack_interp
 
@@ -98,13 +104,17 @@ class MultiBandCoadds(object):
         cwcs = self.coadd_wcs
 
         exps = []
+        psf_exps = []
         noise_exps = []
         byband_exps = {}
+        byband_psf_exps = {}
         byband_noise_exps = {}
 
         for band in self.data:
             bdata = self.data[band]
+
             byband_exps[band] = []
+            byband_psf_exps[band] = []
             byband_noise_exps[band] = []
 
             for epoch_ind, se_obs in enumerate(bdata):
@@ -134,11 +144,12 @@ class MultiBandCoadds(object):
 
                 weight = se_obs.weight.array
 
-                psf_image = se_obs.get_psf(
+                psf_gsimage = se_obs.get_psf(
                     pos.x,
                     pos.y,
-                    center_psf=True,
-                ).array
+                    # center_psf=True,
+                )
+                psf_image = psf_gsimage.array
 
                 # TODO: deal with zeros
                 w = np.where(weight > 0)
@@ -146,11 +157,19 @@ class MultiBandCoadds(object):
                 noise_var = 1.0/weight
 
                 sy, sx = image.shape
+                psy, psx = psf_image.shape
 
                 masked_image = afw_image.MaskedImageF(sx, sy)
                 masked_image.image.array[:, :] = image
                 masked_image.variance.array[:, :] = noise_var
                 masked_image.mask.array[:, :] = bmask
+
+                psf_masked_image = afw_image.MaskedImageF(psx, psy)
+                psf_masked_image.image.array[:, :] = psf_image
+                # using noise from image
+                # TODO do this correctly
+                psf_masked_image.variance.array[:, :] = np.median(noise_var)
+                psf_masked_image.mask.array[:, :] = 0
 
                 nmasked_image = afw_image.MaskedImageF(sx, sy)
                 nmasked_image.image.array[:, :] = noise
@@ -158,16 +177,21 @@ class MultiBandCoadds(object):
                 nmasked_image.mask.array[:, :] = bmask
 
                 exp = afw_image.ExposureF(masked_image)
+                psf_exp = afw_image.ExposureF(psf_masked_image)
                 nexp = afw_image.ExposureF(nmasked_image)
 
+                # currently overriding this
                 exp.setPsf(make_stack_psf(psf_image))
+                psf_exp.setPsf(make_stack_psf(psf_image))
                 nexp.setPsf(make_stack_psf(psf_image))
 
                 exp.setWcs(make_stack_wcs(wcs))
+                psf_exp.setWcs(make_stack_wcs(psf_gsimage.wcs))
                 nexp.setWcs(make_stack_wcs(wcs))
 
                 detector = DetectorWrapper().detector
                 exp.setDetector(detector)
+                psf_exp.setDetector(detector)
                 nexp.setDetector(detector)
 
                 if self.use_stack_interp:
@@ -178,13 +202,18 @@ class MultiBandCoadds(object):
                     repair_exp(nexp, show=False)
 
                 exps.append(exp)
+                psf_exps.append(psf_exp)
                 noise_exps.append(nexp)
+
                 byband_exps[band].append(exp)
+                byband_psf_exps[band].append(psf_exp)
                 byband_noise_exps[band].append(nexp)
 
         self.exps = exps
+        self.psf_exps = psf_exps
         self.noise_exps = noise_exps
         self.byband_exps = byband_exps
+        self.byband_psf_exps = byband_psf_exps
         self.byband_noise_exps = byband_noise_exps
 
     def _make_coadds(self):
@@ -203,6 +232,9 @@ class MultiBandCoadds(object):
                     noise_exps=self.byband_noise_exps[band],
                     coadd_wcs=self.coadd_wcs,
                     coadd_dims=self.coadd_dims,
+                    coadd_psf_wcs=self.coadd_psf_wcs,
+                    coadd_psf_dims=self.coadd_psf_dims,
+                    psf_exps=self.byband_psf_exps[band],
                 )
 
         self.coadds['all'] = CoaddObs(
@@ -210,6 +242,9 @@ class MultiBandCoadds(object):
             noise_exps=self.noise_exps,
             coadd_wcs=self.coadd_wcs,
             coadd_dims=self.coadd_dims,
+            coadd_psf_wcs=self.coadd_psf_wcs,
+            coadd_psf_dims=self.coadd_psf_dims,
+            psf_exps=self.psf_exps,
         )
         if self._show:
             self.coadds['all'].show()
@@ -223,13 +258,20 @@ class CoaddObs(ngmix.Observation):
                  exps,
                  noise_exps,
                  coadd_wcs,
-                 coadd_dims):
+                 coadd_dims,
+                 coadd_psf_wcs,
+                 coadd_psf_dims,
+                 psf_exps):
 
         self.exps = exps
+        self.psf_exps = psf_exps
         self.noise_exps = noise_exps
         self.galsim_wcs = coadd_wcs
         self.coadd_wcs = make_stack_wcs(coadd_wcs)
         self.coadd_dims = coadd_dims
+
+        self.coadd_psf_wcs = make_stack_wcs(coadd_psf_wcs)
+        self.coadd_psf_dims = coadd_psf_dims
 
         self.interp = 'lanczos3'
 
@@ -241,9 +283,9 @@ class CoaddObs(ngmix.Observation):
             [
                 self.image,
                 self.coadd_exp.mask.array,
+                self.psf.image,
                 self.noise,
                 self.coadd_noise_exp.mask.array,
-                # self.weight,
             ],
         )
 
@@ -251,13 +293,45 @@ class CoaddObs(ngmix.Observation):
         """
         make warps and coadds for images and noise fields
         """
-        image_data = self._make_warps(self.exps)
+        image_data = self._make_warps(
+            self.exps,
+            self.coadd_dims,
+            self.coadd_wcs,
+        )
         self.coadd_exp = self._make_coadd(**image_data)
 
-        noise_data = self._make_warps(self.noise_exps)
+        noise_data = self._make_warps(
+            self.noise_exps,
+            self.coadd_dims,
+            self.coadd_wcs,
+        )
         self.coadd_noise_exp = self._make_coadd(**noise_data)
 
-    def _make_warps(self, exps):
+        py, px = self.psf_exps[0].image.array.shape
+        psf_data = self._make_warps(
+            self.psf_exps,
+            self.coadd_psf_dims,
+            self.coadd_psf_wcs,
+        )
+        coadd_psf_exp = self._make_coadd(**psf_data)
+
+        coadd_psf_image = coadd_psf_exp.image.array
+        assert np.all(np.isfinite(coadd_psf_image))
+
+        # vis.show_image(coadd_psf_image)
+
+        self.coadd_exp.setPsf(
+            make_stack_psf(
+                coadd_psf_image,
+            ),
+        )
+        self.coadd_noise_exp.setPsf(
+            make_stack_psf(
+                coadd_psf_image,
+            ),
+        )
+
+    def _make_warps(self, exps, dims, wcs):
         """
         make the warp images
         """
@@ -268,8 +342,8 @@ class CoaddObs(ngmix.Observation):
         input_recorder = CoaddInputRecorderTask(
             config=input_recorder_config, name="dummy",
         )
-        coadd_psf_config = CoaddPsfConfig()
-        coadd_psf_config.warpingKernelName = self.interp
+        # coadd_psf_config = CoaddPsfConfig()
+        # coadd_psf_config.warpingKernelName = self.interp
 
         # warp stack images to coadd wcs
         warp_config = afw_math.Warper.ConfigClass()
@@ -279,7 +353,7 @@ class CoaddObs(ngmix.Observation):
         warp_config.warpingKernelName = self.interp
         warper = afw_math.Warper.fromConfig(warp_config)
 
-        nx, ny = self.coadd_dims
+        nx, ny = dims
         sky_box = geom.Box2I(
             geom.Point2I(0, 0),
             geom.Point2I(nx-1, ny-1),
@@ -304,34 +378,34 @@ class CoaddObs(ngmix.Observation):
             weight_list.append(weight)
 
             wexp = warper.warpExposure(
-                self.coadd_wcs,
+                wcs,
                 exp,
                 maxBBox=exp.getBBox(),
                 destBBox=sky_box,
             )
 
-            # Need coadd psf because psf may not be valid over the whole image
             ir_warp = input_recorder.makeCoaddTempExpRecorder(i, 1)
             good_pixel = np.sum(np.isfinite(wexp.image.array))
             ir_warp.addCalExp(exp, i, good_pixel)
 
-            warp_psf = CoaddPsf(
-                ir_warp.coaddInputs.ccds,
-                self.coadd_wcs,
-                coadd_psf_config.makeControl(),
-            )
+            # Need coadd psf because psf may not be valid over the whole image
+            # warp_psf = CoaddPsf(
+            #     ir_warp.coaddInputs.ccds,
+            #     wcs,
+            #     coadd_psf_config.makeControl(),
+            # )
             wexp.getInfo().setCoaddInputs(ir_warp.coaddInputs)
-            wexp.setPsf(warp_psf)
+            # wexp.setPsf(warp_psf)
             wexps.append(wexp)
 
         return {
             'wexps': wexps,
             'weights': weight_list,
             'input_recorder': input_recorder,
-            'psf_config': coadd_psf_config,
+            # 'psf_config': coadd_psf_config,
         }
 
-    def _make_coadd(self, *, wexps, weights, input_recorder, psf_config):
+    def _make_coadd(self, *, wexps, weights, input_recorder):  # , psf_config):
         """
         make a coadd from warp images, as well as psf coadd
         """
@@ -352,16 +426,16 @@ class CoaddObs(ngmix.Observation):
         stacked_exp.getInfo().setCoaddInputs(input_recorder.makeCoaddInputs())
         coadd_inputs = stacked_exp.getInfo().getCoaddInputs()
 
-        # Build coadd psf
         for wexp, weight in zip(wexps, weights):
             input_recorder.addVisitToCoadd(coadd_inputs, wexp, weight)
 
-        coadd_psf = CoaddPsf(
-            coadd_inputs.ccds,
-            self.coadd_wcs,
-            psf_config.makeControl(),
-        )
-        stacked_exp.setPsf(coadd_psf)
+        # Build coadd psf
+        # coadd_psf = CoaddPsf(
+        #     coadd_inputs.ccds,
+        #     self.coadd_wcs,
+        #     psf_config.makeControl(),
+        # )
+        # stacked_exp.setPsf(coadd_psf)
 
         return stacked_exp
 
