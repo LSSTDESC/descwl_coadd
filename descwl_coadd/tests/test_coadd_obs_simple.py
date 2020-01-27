@@ -11,7 +11,7 @@ DIMS = (11, 13)
 @pytest.fixture
 def se_data():
 
-    def psf_function(*, x, y):
+    def psf_function(*, x, y, center_psf=True):
         return galsim.ImageD(np.ones(DIMS) * 6)
 
     data = {
@@ -26,7 +26,7 @@ def se_data():
     return data
 
 
-def test_coadd_obs_smoke(se_data):
+def test_coadd_obs_simple_smoke(se_data):
     data = [SEObs(**se_data)]*3
 
     coadd_obs = CoaddObsSimple(data)  # noqa
