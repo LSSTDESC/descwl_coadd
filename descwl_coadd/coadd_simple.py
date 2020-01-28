@@ -52,7 +52,7 @@ class MultiBandCoaddsSimple(ngmix.Observation):
                     pos = galsim.PositionD(x=x, y=y)
                     wjac = se_obs.wcs.jacobian(image_pos=pos)
                     wscale, wshear, wtheta, wflip = wjac.getDecomposition()
-                    jac = ngmix.DiagonalJacobian(
+                    jac = ngmix.Jacobian(
                         x=x,
                         y=y,
                         scale=wscale,
@@ -62,7 +62,7 @@ class MultiBandCoaddsSimple(ngmix.Observation):
                         dvdy=wjac.dvdy,
                     )
 
-                    psf_jac = ngmix.DiagonalJacobian(
+                    psf_jac = ngmix.Jacobian(
                         x=psf_cen[1],
                         y=psf_cen[0],
                         scale=wscale,
