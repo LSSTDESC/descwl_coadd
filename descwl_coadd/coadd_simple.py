@@ -54,7 +54,7 @@ class MultiBandCoaddsSimple(ngmix.Observation):
                     wscale, wshear, wtheta, wflip = wjac.getDecomposition()
                     jac = ngmix.DiagonalJacobian(
                         x=x,
-                        y=x,
+                        y=y,
                         scale=wscale,
                         dudx=wjac.dudx,
                         dudy=wjac.dudy,
