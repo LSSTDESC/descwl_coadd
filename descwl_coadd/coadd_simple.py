@@ -55,7 +55,6 @@ class MultiBandCoaddsSimple(ngmix.Observation):
                     jac = ngmix.Jacobian(
                         x=x,
                         y=y,
-                        scale=wscale,
                         dudx=wjac.dudx,
                         dudy=wjac.dudy,
                         dvdx=wjac.dvdx,
@@ -65,7 +64,6 @@ class MultiBandCoaddsSimple(ngmix.Observation):
                     psf_jac = ngmix.Jacobian(
                         x=psf_cen[1],
                         y=psf_cen[0],
-                        scale=wscale,
                         dudx=wjac.dudx,
                         dudy=wjac.dudy,
                         dvdx=wjac.dvdx,
