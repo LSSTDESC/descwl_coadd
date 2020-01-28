@@ -32,7 +32,7 @@ class MultiBandCoaddsSimple(ngmix.Observation):
             for epoch_ind, se_obs in enumerate(bdata):
 
                 cen = (np.array(se_obs.image.array.shape)-1)/2
-                x, y = cen
+                y, x = cen
 
                 wt = np.median(se_obs.weight.array)
                 wsum += wt
