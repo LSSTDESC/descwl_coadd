@@ -6,7 +6,7 @@ import ngmix
 import galsim
 
 
-class CoaddObsSimple(ngmix.Observation):
+class MultiBandCoaddsSimple(ngmix.Observation):
     """
     Coadd a simple set of perfectly aligned images with constant psf and
     non-varying wcs
@@ -18,7 +18,7 @@ class CoaddObsSimple(ngmix.Observation):
         as well as get_psf method.  For example see the simple sim from
         descwl_shear_testing
     """
-    def __init__(self, data):
+    def __init__(self, *, data):
         self._data = data
         self._make_coadd()
 
@@ -93,6 +93,7 @@ class CoaddObsSimple(ngmix.Observation):
             noise=noise,
             weight=weight,
             bmask=np.zeros(image.shape, dtype='i4'),
+            ormask=np.zeros(image.shape, dtype='i4'),
             jacobian=jac,
             psf=psf_obs,
             store_pixels=False,
