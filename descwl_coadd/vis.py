@@ -16,19 +16,21 @@ def show_2images(im1, im2, title=None):
 
     fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(24, 12))
     ax = axs[0]
-    ax.imshow(
+    pos = ax.imshow(
         im1,
         interpolation='nearest',
         cmap='gray',
     )
+    fig.colorbar(pos, ax=ax)
     ax.grid(False)
 
     ax = axs[1]
-    ax.imshow(
+    pos = ax.imshow(
         im2,
         interpolation='nearest',
         cmap='gray',
     )
+    fig.colorbar(pos, ax=ax)
     ax.grid(False)
 
     if title is not None:
@@ -50,11 +52,12 @@ def show_images(imlist, title=None):
     for i, im in enumerate(imlist):
         row, col = grid(i)
         ax = axs[row, col]
-        ax.imshow(
+        pos = ax.imshow(
             im,
             interpolation='nearest',
             cmap='gray',
         )
+        fig.colorbar(pos, ax=ax)
         ax.grid(False)
 
     if title is not None:
