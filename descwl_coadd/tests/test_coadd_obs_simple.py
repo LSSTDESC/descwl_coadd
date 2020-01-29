@@ -3,7 +3,7 @@ import galsim
 import pytest
 
 from descwl_shear_sims import SEObs
-from ..coadd_simple import CoaddObsSimple
+from ..coadd_simple import MultiBandCoaddsSimple
 
 DIMS = (11, 13)
 
@@ -27,6 +27,10 @@ def se_data():
 
 
 def test_coadd_obs_simple_smoke(se_data):
-    data = [SEObs(**se_data)]*3
+    data = {
+        'r': [SEObs(**se_data)]*3,
+        'i': [SEObs(**se_data)]*3,
+        'z': [SEObs(**se_data)]*3,
+    }
 
-    coadd_obs = CoaddObsSimple(data)  # noqa
+    MultiBandCoaddsSimple(data=data)
