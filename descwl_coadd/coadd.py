@@ -288,6 +288,7 @@ class CoaddObs(ngmix.Observation):
                 self.coadd_exp.mask.array,
                 self.noise,
                 self.coadd_noise_exp.mask.array,
+                self.psf.image,
                 # self.weight,
             ],
         )
@@ -307,7 +308,7 @@ class CoaddObs(ngmix.Observation):
         if np.any(~np.isfinite(pimage)):
             raise ValueError('some bad pixels in coadd psf')
 
-        vis.show_2images(self.psf_exps[0].image.array, pimage)
+        # vis.show_2images(self.psf_exps[0].image.array, pimage)
 
         image_data = self._make_warps(
             exps=self.exps,
