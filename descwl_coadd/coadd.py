@@ -1,3 +1,6 @@
+"""
+coadd lsst dm stack exposures
+"""
 import numpy as np
 
 import lsst.geom as geom
