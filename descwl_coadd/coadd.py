@@ -45,6 +45,7 @@ class MultiBandCoadds(object):
                  data,
                  coadd_wcs,
                  coadd_dims,
+                 psf_dims,
                  byband=True,
                  use_stack_interp=False,
                  show=False):
@@ -55,6 +56,7 @@ class MultiBandCoadds(object):
         self.data = data
         self.coadd_wcs = coadd_wcs
         self.coadd_dims = coadd_dims
+        self.psf_dims = psf_dims
         self.byband = byband
         self.use_stack_interp = use_stack_interp
 
@@ -99,13 +101,16 @@ class MultiBandCoadds(object):
 
         exps = []
         noise_exps = []
+        psf_exps = []
         byband_exps = {}
         byband_noise_exps = {}
+        byband_psf_exps = {}
 
         for band in self.data:
             bdata = self.data[band]
             byband_exps[band] = []
             byband_noise_exps[band] = []
+            byband_psf_exps[band] = []
 
             for epoch_ind, se_obs in enumerate(bdata):
 
@@ -134,11 +139,13 @@ class MultiBandCoadds(object):
 
                 weight = se_obs.weight.array
 
-                psf_image = se_obs.get_psf(
+                psf_gsimage, psf_offset = se_obs.get_psf(
                     pos.x,
                     pos.y,
-                    center_psf=True,
-                ).array
+                    center_psf=False,
+                    get_offset=True,
+                )
+                psf_image = psf_gsimage.array
 
                 # TODO: deal with zeros
                 w = np.where(weight > 0)
@@ -157,18 +164,32 @@ class MultiBandCoadds(object):
                 nmasked_image.variance.array[:, :] = noise_var
                 nmasked_image.mask.array[:, :] = bmask
 
+                pny, pnx = psf_image.shape
+                pmasked_image = afw_image.MaskedImageF(pny, pnx)
+                pmasked_image.image.array[:, :] = psf_image
+                pmasked_image.variance.array[:, :] = (psf_image.max()/1000)**2
+                pmasked_image.mask.array[:, :] = 0
+
                 exp = afw_image.ExposureF(masked_image)
                 nexp = afw_image.ExposureF(nmasked_image)
+                psf_exp = afw_image.ExposureF(pmasked_image)
 
                 exp.setPsf(make_stack_psf(psf_image))
                 nexp.setPsf(make_stack_psf(psf_image))
 
                 exp.setWcs(make_stack_wcs(wcs))
                 nexp.setWcs(make_stack_wcs(wcs))
+                psf_exp.setWcs(make_stack_psf_wcs(
+                    dims=psf_gsimage.array.shape,
+                    jac=psf_gsimage.wcs,
+                    offset=psf_offset,
+                    world_origin=wcs.center,
+                ))
 
                 detector = DetectorWrapper().detector
                 exp.setDetector(detector)
                 nexp.setDetector(detector)
+                psf_exp.setDetector(detector)
 
                 if self.use_stack_interp:
                     add_cosmics_to_noise(exp=exp, noise_exp=nexp)
@@ -182,10 +203,15 @@ class MultiBandCoadds(object):
                 byband_exps[band].append(exp)
                 byband_noise_exps[band].append(nexp)
 
+                psf_exps.append(psf_exp)
+                byband_psf_exps[band].append(psf_exp)
+
         self.exps = exps
         self.noise_exps = noise_exps
+        self.psf_exps = psf_exps
         self.byband_exps = byband_exps
         self.byband_noise_exps = byband_noise_exps
+        self.byband_psf_exps = byband_psf_exps
 
     def _make_coadds(self):
         """
@@ -208,8 +234,10 @@ class MultiBandCoadds(object):
         self.coadds['all'] = CoaddObs(
             exps=self.exps,
             noise_exps=self.noise_exps,
+            psf_exps=self.psf_exps,
             coadd_wcs=self.coadd_wcs,
             coadd_dims=self.coadd_dims,
+            psf_dims=self.psf_dims,
         )
         if self._show:
             self.coadds['all'].show()
@@ -222,14 +250,31 @@ class CoaddObs(ngmix.Observation):
     def __init__(self, *,
                  exps,
                  noise_exps,
+                 psf_exps,
                  coadd_wcs,
-                 coadd_dims):
+                 coadd_dims,
+                 psf_dims):
+
+        import galsim
 
         self.exps = exps
+        self.psf_exps = psf_exps
         self.noise_exps = noise_exps
         self.galsim_wcs = coadd_wcs
         self.coadd_wcs = make_stack_wcs(coadd_wcs)
         self.coadd_dims = coadd_dims
+        self.psf_dims = psf_dims
+
+        ceny, cenx = (np.array(coadd_dims)-1)/2
+        image_pos = galsim.PositionD(x=cenx, y=ceny)
+        jac = coadd_wcs.local(image_pos=image_pos)
+
+        self.coadd_psf_wcs = make_stack_psf_wcs(
+            dims=psf_dims,
+            offset=galsim.PositionD(x=0, y=0),
+            jac=jac,
+            world_origin=coadd_wcs.center,
+        )
 
         self.interp = 'lanczos3'
 
@@ -251,13 +296,38 @@ class CoaddObs(ngmix.Observation):
         """
         make warps and coadds for images and noise fields
         """
-        image_data = self._make_warps(self.exps)
+        psf_data = self._make_warps(
+            exps=self.psf_exps,
+            dims=self.psf_dims,
+            wcs=self.coadd_psf_wcs,
+            dopsf=False,
+        )
+        coadd_psf_exp = self._make_coadd(**psf_data)
+        pimage = coadd_psf_exp.image.array
+        if np.any(~np.isfinite(pimage)):
+            raise ValueError('some bad pixels in coadd psf')
+
+        vis.show_2images(self.psf_exps[0].image.array, pimage)
+
+        image_data = self._make_warps(
+            exps=self.exps,
+            dims=self.coadd_dims,
+            wcs=self.coadd_wcs,
+            dopsf=True,
+        )
         self.coadd_exp = self._make_coadd(**image_data)
+        self.coadd_exp.setPsf(make_stack_psf(pimage))
 
-        noise_data = self._make_warps(self.noise_exps)
+        noise_data = self._make_warps(
+            exps=self.noise_exps,
+            dims=self.coadd_dims,
+            wcs=self.coadd_wcs,
+            dopsf=True,
+        )
         self.coadd_noise_exp = self._make_coadd(**noise_data)
+        self.coadd_noise_exp.setPsf(make_stack_psf(pimage))
 
-    def _make_warps(self, exps):
+    def _make_warps(self, *, exps, dims, wcs, dopsf=False):
         """
         make the warp images
         """
@@ -268,8 +338,10 @@ class CoaddObs(ngmix.Observation):
         input_recorder = CoaddInputRecorderTask(
             config=input_recorder_config, name="dummy",
         )
-        coadd_psf_config = CoaddPsfConfig()
-        coadd_psf_config.warpingKernelName = self.interp
+
+        if dopsf:
+            coadd_psf_config = CoaddPsfConfig()
+            coadd_psf_config.warpingKernelName = self.interp
 
         # warp stack images to coadd wcs
         warp_config = afw_math.Warper.ConfigClass()
@@ -279,7 +351,7 @@ class CoaddObs(ngmix.Observation):
         warp_config.warpingKernelName = self.interp
         warper = afw_math.Warper.fromConfig(warp_config)
 
-        nx, ny = self.coadd_dims
+        nx, ny = dims
         sky_box = geom.Box2I(
             geom.Point2I(0, 0),
             geom.Point2I(nx-1, ny-1),
@@ -304,7 +376,7 @@ class CoaddObs(ngmix.Observation):
             weight_list.append(weight)
 
             wexp = warper.warpExposure(
-                self.coadd_wcs,
+                wcs,
                 exp,
                 maxBBox=exp.getBBox(),
                 destBBox=sky_box,
@@ -315,23 +387,31 @@ class CoaddObs(ngmix.Observation):
             good_pixel = np.sum(np.isfinite(wexp.image.array))
             ir_warp.addCalExp(exp, i, good_pixel)
 
-            warp_psf = CoaddPsf(
-                ir_warp.coaddInputs.ccds,
-                self.coadd_wcs,
-                coadd_psf_config.makeControl(),
-            )
+            if dopsf:
+                warp_psf = CoaddPsf(
+                    ir_warp.coaddInputs.ccds,
+                    wcs,
+                    coadd_psf_config.makeControl(),
+                )
+
             wexp.getInfo().setCoaddInputs(ir_warp.coaddInputs)
-            wexp.setPsf(warp_psf)
+
+            if dopsf:
+                wexp.setPsf(warp_psf)
+
             wexps.append(wexp)
 
-        return {
+        data = {
             'wexps': wexps,
             'weights': weight_list,
             'input_recorder': input_recorder,
-            'psf_config': coadd_psf_config,
         }
+        if dopsf:
+            data['psf_config'] = coadd_psf_config
 
-    def _make_coadd(self, *, wexps, weights, input_recorder, psf_config):
+        return data
+
+    def _make_coadd(self, *, wexps, weights, input_recorder, psf_config=None):
         """
         make a coadd from warp images, as well as psf coadd
         """
@@ -356,12 +436,13 @@ class CoaddObs(ngmix.Observation):
         for wexp, weight in zip(wexps, weights):
             input_recorder.addVisitToCoadd(coadd_inputs, wexp, weight)
 
-        coadd_psf = CoaddPsf(
-            coadd_inputs.ccds,
-            self.coadd_wcs,
-            psf_config.makeControl(),
-        )
-        stacked_exp.setPsf(coadd_psf)
+        if psf_config is not None:
+            coadd_psf = CoaddPsf(
+                coadd_inputs.ccds,
+                self.coadd_wcs,
+                psf_config.makeControl(),
+            )
+            stacked_exp.setPsf(coadd_psf)
 
         return stacked_exp
 
@@ -486,6 +567,42 @@ def make_stack_wcs(wcs):
         crval=crval,
         cdMatrix=cd_matrix,
     )
+
+
+def make_stack_psf_wcs(*, dims, offset, jac, world_origin):
+    """
+    convert the galsim jacobian wcs to stack wcs
+    for a tan projection
+
+    Parameters
+    ----------
+    dims: (ny, nx)
+        dims of the psf
+    offset: seq or array
+        xoffset, yoffset
+    jac: galsim jacobian
+        From wcs
+    world_origin: origin of wcs
+        get from coadd_wcs.center
+    """
+    import galsim
+
+    cy, cx = (np.array(dims)-1)/2
+    cy += offset.y
+    cx += offset.x
+    origin = galsim.PositionD(x=cx, y=cy)
+
+    tan_wcs = galsim.TanWCS(
+        affine=galsim.AffineTransform(
+            jac.dudx, jac.dudy, jac.dvdx, jac.dvdy,
+            origin=origin,
+            world_origin=galsim.PositionD(0, 0),
+        ),
+        world_origin=world_origin,
+        units=galsim.arcsec,
+    )
+
+    return make_stack_wcs(tan_wcs)
 
 
 def repair_exp(exp, show=False, border_size=None):
