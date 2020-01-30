@@ -27,10 +27,17 @@ def test_cosmics():
 
     # coadding individual bands as well as over bands
     coadd_dims = (sim.coadd_dim, )*2
+
+    psf_dim = int(sim.psf_dim/np.sqrt(3))
+    if psf_dim % 2 == 0:
+        psf_dim -= 1
+    psf_dims = (psf_dim,)*2
+
     coadds = MultiBandCoadds(
         data=data,
         coadd_wcs=sim.coadd_wcs,
         coadd_dims=coadd_dims,
+        psf_dims=psf_dims,
     )
 
     for exp, nexp in zip(coadds.exps, coadds.noise_exps):

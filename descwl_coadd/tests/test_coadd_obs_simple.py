@@ -11,8 +11,13 @@ DIMS = (11, 13)
 @pytest.fixture
 def se_data():
 
-    def psf_function(*, x, y, center_psf=True):
-        return galsim.ImageD(np.ones(DIMS) * 6)
+    def psf_function(*, x, y, center_psf=True, get_offset=False):
+        im = galsim.ImageD(np.ones(DIMS) * 6)
+        if get_offset:
+            offset = galsim.PositionD(x=0, y=0)
+            return im, offset
+        else:
+            return im
 
     data = {
         'image': galsim.ImageD(np.ones(DIMS)),
