@@ -226,9 +226,11 @@ class MultiBandCoadds(object):
             for band in self.byband_exps:
                 self.coadds[band] = CoaddObs(
                     exps=self.byband_exps[band],
+                    psf_exps=self.byband_psf_exps[band],
                     noise_exps=self.byband_noise_exps[band],
                     coadd_wcs=self.coadd_wcs,
                     coadd_dims=self.coadd_dims,
+                    psf_dims=self.psf_dims,
                 )
 
         self.coadds['all'] = CoaddObs(
