@@ -51,10 +51,13 @@ class MultiBandCoadds(object):
                  psf_dims,
                  byband=True,
                  use_stack_interp=False,
-                 show=False):
+                 show=False,
+                 loglevel='info'):
 
         self._show = show
         self.log = lsst.log.getLogger("MultiBandCoadds")
+        self.log.setLevel(getattr(lsst.log, loglevel.upper()))
+        self.loglevel = loglevel
 
         self.data = data
         self.coadd_wcs = coadd_wcs
