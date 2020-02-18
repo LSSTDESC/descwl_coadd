@@ -22,19 +22,14 @@ import ngmix
 from . import vis
 from .interp import interpolate_image_and_noise
 
-# STAR and BLEED are not official LSST bits
-# these are used in the sim code descwl-shear-sims
-# in the lsst_bits.py module
+EDGE = afw_image.Mask.getPlaneBitMask('EDGE')
 
-STAR = 2**10
-BLEED = 2**11
-EDGE = 2**afw_image.Mask.getMaskPlane('EDGE')
-
+# we interpolate the saturated pixels but not full star
+# or bleed masks
 FLAGS2INTERP = (
-    2**afw_image.Mask.getMaskPlane('BAD') |
-    2**afw_image.Mask.getMaskPlane('CR') |
-    STAR |
-    BLEED
+    afw_image.Mask.getPlaneBitMask('BAD') |
+    afw_image.Mask.getPlaneBitMask('CR') |
+    afw_image.Mask.getPlaneBitMask('SAT')
 )
 
 
