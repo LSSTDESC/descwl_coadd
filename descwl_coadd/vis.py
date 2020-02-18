@@ -1,3 +1,19 @@
+def show_image_and_mask(exp):
+    """
+    show the image and mask in ds9, with
+    mask colored
+
+    Parameters
+    ----------
+    exp: afw_image.MaskedImageF
+        The image to show
+    """
+    import lsst.afw.display as afw_display
+    display = afw_display.getDisplay(backend='ds9')
+    display.mtv(exp)
+    input('hit enter')
+
+
 def show_image(image):
     """
     show an image
