@@ -22,9 +22,18 @@ import ngmix
 from . import vis
 from .interp import interpolate_image_and_noise
 
+# STAR and BLEED are not official LSST bits
+# these are used in the sim code descwl-shear-sims
+# in the lsst_bits.py module
+
+STAR = 2**10
+BLEED = 2**11
+
 FLAGS2INTERP = (
     2**afw_image.Mask.getMaskPlane('BAD') |
-    2**afw_image.Mask.getMaskPlane('CR')
+    2**afw_image.Mask.getMaskPlane('CR') |
+    STAR |
+    BLEED
 )
 
 
@@ -541,6 +550,7 @@ class CoaddObs(ngmix.Observation):
             noise=noise,
             weight=weight,
             bmask=np.zeros(image.shape, dtype='i4'),
+            ormask=self.coadd_exp.mask.array,
             jacobian=jac,
             psf=psf_obs,
             store_pixels=False,
