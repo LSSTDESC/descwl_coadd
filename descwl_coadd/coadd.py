@@ -28,6 +28,7 @@ from .interp import interpolate_image_and_noise
 
 STAR = 2**10
 BLEED = 2**11
+EDGE = 2**afw_image.Mask.getMaskPlane('EDGE')
 
 FLAGS2INTERP = (
     2**afw_image.Mask.getMaskPlane('BAD') |
@@ -138,6 +139,7 @@ class MultiBandCoadds(object):
                 weight = se_obs.weight.array
 
                 if not self.use_stack_interp:
+                    zero_bits(image=image, noise=noise, mask=bmask, flags=EDGE)
                     image, noise = interpolate_image_and_noise(
                         image=image,
                         noise=noise,
@@ -687,3 +689,11 @@ def add_badcols_to_noise(*, exp, noise_exp):
     print('pixels for badcols:', w[0].size)
     if w[0].size > 0:
         noise_exp.image.array[w] = exp.image.array[w]
+
+
+def zero_bits(*, image, noise, mask, flags):
+    w = np.where((mask & flags) != 0)
+    # w = np.where(mask != 0)
+    if w[0].size > 0:
+        image[w] = 0.0
+        noise[w] = 0.0
