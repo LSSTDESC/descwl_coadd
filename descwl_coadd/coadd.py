@@ -171,7 +171,6 @@ class MultiBandCoadds(object):
                 masked_image.variance.array[:, :] = noise_var
                 masked_image.mask.array[:, :] = bmask
 
-
                 nmasked_image = afw_image.MaskedImageF(sx, sy)
                 nmasked_image.image.array[:, :] = noise
                 nmasked_image.variance.array[:, :] = noise_var
