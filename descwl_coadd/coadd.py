@@ -22,9 +22,14 @@ import ngmix
 from . import vis
 from .interp import interpolate_image_and_noise
 
+EDGE = afw_image.Mask.getPlaneBitMask('EDGE')
+
+# we interpolate the saturated pixels but not full star
+# or bleed masks
 FLAGS2INTERP = (
-    2**afw_image.Mask.getMaskPlane('BAD') |
-    2**afw_image.Mask.getMaskPlane('CR')
+    afw_image.Mask.getPlaneBitMask('BAD') |
+    afw_image.Mask.getPlaneBitMask('CR') |
+    afw_image.Mask.getPlaneBitMask('SAT')
 )
 
 
@@ -129,6 +134,7 @@ class MultiBandCoadds(object):
                 weight = se_obs.weight.array
 
                 if not self.use_stack_interp:
+                    zero_bits(image=image, noise=noise, mask=bmask, flags=EDGE)
                     image, noise = interpolate_image_and_noise(
                         image=image,
                         noise=noise,
@@ -203,6 +209,9 @@ class MultiBandCoadds(object):
 
                     repair_exp(exp, show=False)
                     repair_exp(nexp, show=False)
+
+                if self._show:
+                    vis.show_image_and_mask(exp)
 
                 exps.append(exp)
                 noise_exps.append(nexp)
@@ -541,6 +550,7 @@ class CoaddObs(ngmix.Observation):
             noise=noise,
             weight=weight,
             bmask=np.zeros(image.shape, dtype='i4'),
+            ormask=self.coadd_exp.mask.array,
             jacobian=jac,
             psf=psf_obs,
             store_pixels=False,
@@ -677,3 +687,11 @@ def add_badcols_to_noise(*, exp, noise_exp):
     print('pixels for badcols:', w[0].size)
     if w[0].size > 0:
         noise_exp.image.array[w] = exp.image.array[w]
+
+
+def zero_bits(*, image, noise, mask, flags):
+    w = np.where((mask & flags) != 0)
+    # w = np.where(mask != 0)
+    if w[0].size > 0:
+        image[w] = 0.0
+        noise[w] = 0.0
