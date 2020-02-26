@@ -80,9 +80,9 @@ def test_coadd_obs_weights():
         psf_dims=psf_dims,
     )
 
-    tol = 1.0e-3
-
-    for exp, pexp, nexp in zip(coadds.exps, coadds.psf_exps, coadds.noise_exps):
+    for exp, pexp, nexp in zip(coadds.exps,
+                               coadds.psf_exps,
+                               coadds.noise_exps):
 
         emed = np.median(exp.variance.array)
         pmed = np.median(pexp.variance.array)
