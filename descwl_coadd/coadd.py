@@ -176,10 +176,14 @@ class MultiBandCoadds(object):
                 nmasked_image.variance.array[:, :] = noise_var
                 nmasked_image.mask.array[:, :] = bmask
 
+                # an exp for the PSF
+                # we need to put a var here that is consistent with the
+                # main image to get a consistent coadd.  I'm not sure
+                # what the best choice is, using median for now TODO
                 pny, pnx = psf_image.shape
                 pmasked_image = afw_image.MaskedImageF(pny, pnx)
                 pmasked_image.image.array[:, :] = psf_image
-                pmasked_image.variance.array[:, :] = (psf_image.max()/1000)**2
+                pmasked_image.variance.array[:, :] = np.median(noise_var)
                 pmasked_image.mask.array[:, :] = 0
 
                 exp = afw_image.ExposureF(masked_image)
