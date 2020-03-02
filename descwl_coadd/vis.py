@@ -11,6 +11,7 @@ def show_image_and_mask(exp):
     import lsst.afw.display as afw_display
     display = afw_display.getDisplay(backend='ds9')
     display.mtv(exp)
+    display.scale('log', 'minmax')
 
 
 def show_image(image):
