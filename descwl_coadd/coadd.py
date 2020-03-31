@@ -325,6 +325,7 @@ class CoaddObs(ngmix.Observation):
             dopsf=False,
         )
         coadd_psf_exp = self._make_coadd(**psf_data)
+
         pimage = coadd_psf_exp.image.array
         wbad = np.where(~np.isfinite(pimage))
 
@@ -332,8 +333,6 @@ class CoaddObs(ngmix.Observation):
             raise ValueError('no good pixels in the psf')
 
         pimage[wbad] = 0.0
-
-        # vis.show_2images(self.psf_exps[0].image.array, pimage)
 
         image_data = self._make_warps(
             exps=self.exps,
