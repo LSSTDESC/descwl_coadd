@@ -327,9 +327,11 @@ class CoaddObs(ngmix.Observation):
         coadd_psf_exp = self._make_coadd(**psf_data)
         pimage = coadd_psf_exp.image.array
         wbad = np.where(~np.isfinite(pimage))
+
+        if wbad[0].size == pimage.size:
+            raise ValueError('no good pixels in the psf')
+
         pimage[wbad] = 0.0
-        if np.any(~np.isfinite(pimage)):
-            raise ValueError('some bad pixels in coadd psf')
 
         # vis.show_2images(self.psf_exps[0].image.array, pimage)
 
