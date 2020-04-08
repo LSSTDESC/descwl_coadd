@@ -15,9 +15,7 @@ def test_coadd_obs_smoke():
     coadd_dims = (sim.coadd_dim,)*2
 
     # coadding individual bands as well as over bands
-    psf_dim = int(sim.psf_dim/np.sqrt(3))
-    if psf_dim % 2 == 0:
-        psf_dim -= 1
+    psf_dim = sim.psf_dim
     psf_dims = (psf_dim,)*2
 
     coadds = MultiBandCoadds(
@@ -68,9 +66,7 @@ def test_coadd_obs_weights():
     coadd_dims = (sim.coadd_dim,)*2
 
     # coadding individual bands as well as over bands
-    psf_dim = int(sim.psf_dim/np.sqrt(3))
-    if psf_dim % 2 == 0:
-        psf_dim -= 1
+    psf_dim = sim.psf_dim
     psf_dims = (psf_dim,)*2
 
     coadds = MultiBandCoadds(
