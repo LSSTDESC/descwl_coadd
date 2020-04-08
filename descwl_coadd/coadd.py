@@ -58,12 +58,16 @@ class MultiBandCoadds(object):
                  use_stack_interp=False,
                  show=False,
                  loglevel='info',
-                 rng=None):
+                 rng=None,
+                 interp_bright_stars=False,
+                 replace_bright_stars=False):
 
         self._rng = (
             rng if isinstance(rng, np.random.RandomState)
             else np.random.RandomState(seed=rng)
         )
+        self.interp_bright_stars = interp_bright_stars
+        self.replace_bright_stars = replace_bright_stars
 
         self._show = show
         self.log = lsst.log.getLogger("MultiBandCoadds")
@@ -139,16 +143,16 @@ class MultiBandCoadds(object):
                 bmask = se_obs.bmask.array
                 weight = se_obs.weight.array
 
-                """
-                replace_bright_star_noise(
-                    rng=self._rng,
-                    image=image,
-                    noise_image=noise,
-                    weight=weight,
-                    mask=bmask,
-                )
-                """
-                convert_bright_star_to_interp(mask=bmask)
+                if self.replace_bright_stars:
+                    replace_bright_star_noise(
+                        rng=self._rng,
+                        image=image,
+                        noise_image=noise,
+                        weight=weight,
+                        mask=bmask,
+                    )
+                if self.interp_bright_stars:
+                    flag_bright_star_as_interp(mask=bmask)
 
                 if not self.use_stack_interp:
                     zero_bits(image=image, noise=noise, mask=bmask, flags=EDGE)
@@ -745,9 +749,9 @@ def replace_bright_star_noise(*, rng, image, noise_image, weight, mask):
         wtravel[w] = medweight
 
 
-def convert_bright_star_to_interp(*, mask):
+def flag_bright_star_as_interp(*, mask):
     """
-    replace bright star regions with noise
+    flag BRIGHT_STAR also as SAT so it will be interpolated
 
     we currently pull the bitmask value from the descwl_shear_sims
     package
