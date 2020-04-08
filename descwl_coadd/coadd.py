@@ -57,7 +57,13 @@ class MultiBandCoadds(object):
                  byband=True,
                  use_stack_interp=False,
                  show=False,
-                 loglevel='info'):
+                 loglevel='info',
+                 rng=None):
+
+        self._rng = (
+            rng if isinstance(rng, np.random.RandomState)
+            else np.random.RandomState(seed=rng)
+        )
 
         self._show = show
         self.log = lsst.log.getLogger("MultiBandCoadds")
@@ -133,8 +139,20 @@ class MultiBandCoadds(object):
                 bmask = se_obs.bmask.array
                 weight = se_obs.weight.array
 
+                """
+                replace_bright_star_noise(
+                    rng=self._rng,
+                    image=image,
+                    noise_image=noise,
+                    weight=weight,
+                    mask=bmask,
+                )
+                """
+                convert_bright_star_to_interp(mask=bmask)
+
                 if not self.use_stack_interp:
                     zero_bits(image=image, noise=noise, mask=bmask, flags=EDGE)
+
                     image, noise = interpolate_image_and_noise(
                         image=image,
                         noise=noise,
@@ -702,3 +720,41 @@ def zero_bits(*, image, noise, mask, flags):
     if w[0].size > 0:
         image[w] = 0.0
         noise[w] = 0.0
+
+
+def replace_bright_star_noise(*, rng, image, noise_image, weight, mask):
+    """
+    replace bright star regions with noise
+
+    we currently pull the bitmask value from the descwl_shear_sims
+    package
+    """
+    from descwl_shear_sims.lsst_bits import BRIGHT_STAR
+
+    mravel = mask.ravel()
+    imravel = image.ravel()
+    nimravel = noise_image.ravel()
+    wtravel = weight.ravel()
+
+    w, = np.where((mravel & BRIGHT_STAR) != 0)
+    if w.size > 0:
+        medweight = np.median(weight)
+        err = np.sqrt(1.0/medweight)
+        imravel[w] = rng.normal(scale=err, size=w.size)
+        nimravel[w] = rng.normal(scale=err, size=w.size)
+        wtravel[w] = medweight
+
+
+def convert_bright_star_to_interp(*, mask):
+    """
+    replace bright star regions with noise
+
+    we currently pull the bitmask value from the descwl_shear_sims
+    package
+    """
+    from descwl_shear_sims.lsst_bits import BRIGHT_STAR
+
+    w = np.where((mask & BRIGHT_STAR) != 0)
+    if w[0].size > 0:
+        SAT = afw_image.Mask.getPlaneBitMask('SAT')
+        mask[w] |= SAT
