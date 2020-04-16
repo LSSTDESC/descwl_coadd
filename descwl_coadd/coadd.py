@@ -22,6 +22,9 @@ import ngmix
 from . import vis
 from .interp import interpolate_image_and_noise
 
+# only place to get this for now
+from descwl_shear_sims.lsst_bits import BRIGHT
+
 EDGE = afw_image.Mask.getPlaneBitMask('EDGE')
 
 # we interpolate the saturated pixels but not full star
@@ -57,7 +60,23 @@ class MultiBandCoadds(object):
                  byband=True,
                  use_stack_interp=False,
                  show=False,
-                 loglevel='info'):
+                 loglevel='info',
+                 rng=None,
+                 interp_bright=False,
+                 replace_bright=False):
+
+        assert use_stack_interp is False
+
+        self._rng = (
+            rng if isinstance(rng, np.random.RandomState)
+            else np.random.RandomState(seed=rng)
+        )
+        self.replace_bright = replace_bright
+        self.interp_bright = interp_bright
+        if self.interp_bright:
+            self.flags2interp = FLAGS2INTERP | BRIGHT
+        else:
+            self.flags2interp = FLAGS2INTERP
 
         self._show = show
         self.log = lsst.log.getLogger("MultiBandCoadds")
@@ -133,14 +152,24 @@ class MultiBandCoadds(object):
                 bmask = se_obs.bmask.array
                 weight = se_obs.weight.array
 
+                if self.replace_bright:
+                    replace_bright_with_noise(
+                        rng=self._rng,
+                        image=image,
+                        noise_image=noise,
+                        weight=weight,
+                        mask=bmask,
+                    )
+
                 if not self.use_stack_interp:
                     zero_bits(image=image, noise=noise, mask=bmask, flags=EDGE)
+
                     image, noise = interpolate_image_and_noise(
                         image=image,
                         noise=noise,
                         weight=weight,
                         bmask=bmask,
-                        bad_flags=FLAGS2INTERP,
+                        bad_flags=self.flags2interp,
                     )
                     if self._show:
                         vis.show_images([
@@ -702,3 +731,41 @@ def zero_bits(*, image, noise, mask, flags):
     if w[0].size > 0:
         image[w] = 0.0
         noise[w] = 0.0
+
+
+def replace_bright_with_noise(*, rng, image, noise_image, weight, mask):
+    """
+    replace regions marked bright with noise
+
+    we currently pull the bitmask value from the descwl_shear_sims
+    package
+    """
+
+    mravel = mask.ravel()
+    imravel = image.ravel()
+    nimravel = noise_image.ravel()
+    wtravel = weight.ravel()
+
+    w, = np.where((mravel & BRIGHT) != 0)
+    if w.size > 0:
+        medweight = np.median(weight)
+        err = np.sqrt(1.0/medweight)
+        imravel[w] = rng.normal(scale=err, size=w.size)
+        nimravel[w] = rng.normal(scale=err, size=w.size)
+        wtravel[w] = medweight
+
+
+'''
+def flag_bright_star_as_interp(*, mask):
+    """
+    flag BRIGHT also as SAT so it will be interpolated
+
+    we currently pull the bitmask value from the descwl_shear_sims
+    package
+    """
+
+    w = np.where((mask & BRIGHT) != 0)
+    if w[0].size > 0:
+        SAT = afw_image.Mask.getPlaneBitMask('SAT')
+        mask[w] |= SAT
+'''
