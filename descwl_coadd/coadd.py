@@ -2,6 +2,7 @@
 coadd lsst dm stack exposures
 """
 import numpy as np
+from numba import njit
 
 import lsst.geom as geom
 from lsst.afw.geom import makeSkyWcs
@@ -51,19 +52,34 @@ class MultiBandCoadds(object):
     byband: bool
         If True, make coadds for individual bands as well as over all
         bands
+    show: bool
+        If True show some images, default False
+    loglevel: string
+        Default info
+    rng: np.random.RandomState
+        Random state used for replace_bright
+    use_stack_interp: bool
+        If True, use the stacks interpolation, default False
+    interp_bright: bool
+        If True, mark BRIGHT as SAT and do interpolation
+    replace_bright: bool
+        If True, replace BRIGHT with nois.
     """
-    def __init__(self, *,
-                 data,
-                 coadd_wcs,
-                 coadd_dims,
-                 psf_dims,
-                 byband=True,
-                 use_stack_interp=False,
-                 show=False,
-                 loglevel='info',
-                 rng=None,
-                 interp_bright=False,
-                 replace_bright=False):
+    def __init__(
+        self, *,
+        data,
+        coadd_wcs,
+        coadd_dims,
+        psf_dims,
+        byband=True,
+        show=False,
+        loglevel='info',
+        rng=None,
+        use_stack_interp=False,
+        interp_bright=False,
+        replace_bright=False,
+        max_mask_frac=0.1,
+    ):
 
         assert use_stack_interp is False
 
@@ -278,6 +294,11 @@ class MultiBandCoadds(object):
                     coadd_dims=self.coadd_dims,
                     psf_dims=self.psf_dims,
                 )
+                self.coadds[band].meta['mask_frac'] = get_masked_frac(
+                    mask=self.coadds[band].ormask,
+                    flags=FLAGS2INTERP,
+                )
+
 
         self.coadds['all'] = CoaddObs(
             exps=self.exps,
@@ -286,6 +307,10 @@ class MultiBandCoadds(object):
             coadd_wcs=self.coadd_wcs,
             coadd_dims=self.coadd_dims,
             psf_dims=self.psf_dims,
+        )
+        self.coadds['all'].meta['mask_frac'] = get_masked_frac(
+            mask=self.coadds['all'].ormask,
+            flags=FLAGS2INTERP,
         )
         if self._show:
             self.coadds['all'].show()
@@ -765,3 +790,18 @@ def flag_bright_as_interp(*, mask):
     if w[0].size > 0:
         SAT = afw_image.Mask.getPlaneBitMask('SAT')
         mask[w] |= SAT
+
+
+@njit
+def get_masked_frac(*, mask, flags):
+    nrows, ncols = mask.shape
+
+    npixels = mask.size
+    nmasked = 0
+
+    for row in range(nrows):
+        for col in range(ncols):
+            if mask[row, col] & flags != 0:
+                nmasked += 1
+
+    return nmasked/npixels
