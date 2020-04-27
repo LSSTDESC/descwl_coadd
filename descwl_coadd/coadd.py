@@ -787,8 +787,8 @@ def flag_bright_as_interp(*, mask):
 
     w = np.where((mask & BRIGHT) != 0)
     if w[0].size > 0:
-        SAT = afw_image.Mask.getPlaneBitMask('SAT')
-        mask[w] |= SAT
+        satval = afw_image.Mask.getPlaneBitMask('SAT')
+        mask[w] |= satval
 
 
 @njit
