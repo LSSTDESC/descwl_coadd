@@ -299,7 +299,6 @@ class MultiBandCoadds(object):
                     flags=FLAGS2INTERP,
                 )
 
-
         self.coadds['all'] = CoaddObs(
             exps=self.exps,
             noise_exps=self.noise_exps,
