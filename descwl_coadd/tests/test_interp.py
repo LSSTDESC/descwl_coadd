@@ -21,7 +21,8 @@ def test_replace_bright_with_noise():
         image=image,
         noise_image=noise,
         weight=weight,
-        mask=mask
+        mask=mask,
+        flag=8,
     )
 
     rng = np.random.RandomState(seed=42)
