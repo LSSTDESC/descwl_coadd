@@ -1,5 +1,7 @@
 """
-code copied from https://github.com/beckermr/pizza-cutter/
+most of this code is copied from https://github.com/beckermr/pizza-cutter/
+
+some of the newer stuff at the bottom was written in this repo
 """
 import numpy as np
 from scipy.interpolate import CloughTocher2DInterpolator
@@ -179,3 +181,42 @@ def interpolate_image_and_noise(
     else:
         # return a copy here since the caller expects new images
         return image.copy(), noise.copy()
+
+
+def replace_flag_with_noise(*, rng, image, noise_image, weight, mask, flag):
+    """Replace regions marked bright with noise.
+
+    We currently pull the bitmask value from the descwl_shear_sims package.
+
+    NOTE: This function operates IN PLACE on the input arrays.
+
+    Parameters
+    ----------
+    rng : np.random.RandomState
+        The RNG instance to use for noise generation.
+    image : np.ndarray
+        The image to interpolate.
+    noise_image : np.ndarray
+        The noise image to interpolate.
+    weight : np.ndarray
+        The weight map for the image.
+    mask : np.ndarray
+        The bit mask for the image.
+    flag : int
+        The mask bit for which the image and noise image will be replaced by noise.
+    """
+
+    mravel = mask.ravel()
+    w, = np.where((mravel & flag) != 0)
+
+    if w.size > 0:
+        # ravel the rest
+        imravel = image.ravel()
+        nimravel = noise_image.ravel()
+        wtravel = weight.ravel()
+
+        medweight = np.median(weight)
+        err = np.sqrt(1.0/medweight)
+        imravel[w] = rng.normal(scale=err, size=w.size)
+        nimravel[w] = rng.normal(scale=err, size=w.size)
+        wtravel[w] = medweight

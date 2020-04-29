@@ -20,7 +20,7 @@ import coord
 import ngmix
 
 from . import vis
-from .interp import interpolate_image_and_noise
+from .interp import interpolate_image_and_noise, replace_flag_with_noise
 
 # only place to get this for now
 from descwl_shear_sims.lsst_bits import BRIGHT
@@ -153,12 +153,13 @@ class MultiBandCoadds(object):
                 weight = se_obs.weight.array
 
                 if self.replace_bright:
-                    replace_bright_with_noise(
+                    replace_flag_with_noise(
                         rng=self._rng,
                         image=image,
                         noise_image=noise,
                         weight=weight,
                         mask=bmask,
+                        flag=BRIGHT,
                     )
 
                 if not self.use_stack_interp:
@@ -731,28 +732,6 @@ def zero_bits(*, image, noise, mask, flags):
     if w[0].size > 0:
         image[w] = 0.0
         noise[w] = 0.0
-
-
-def replace_bright_with_noise(*, rng, image, noise_image, weight, mask):
-    """
-    replace regions marked bright with noise
-
-    we currently pull the bitmask value from the descwl_shear_sims
-    package
-    """
-
-    mravel = mask.ravel()
-    imravel = image.ravel()
-    nimravel = noise_image.ravel()
-    wtravel = weight.ravel()
-
-    w, = np.where((mravel & BRIGHT) != 0)
-    if w.size > 0:
-        medweight = np.median(weight)
-        err = np.sqrt(1.0/medweight)
-        imravel[w] = rng.normal(scale=err, size=w.size)
-        nimravel[w] = rng.normal(scale=err, size=w.size)
-        wtravel[w] = medweight
 
 
 '''
