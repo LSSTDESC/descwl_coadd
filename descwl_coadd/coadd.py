@@ -259,6 +259,7 @@ class MultiBandCoadds(object):
 
                 if self._show:
                     vis.show_image_and_mask(exp)
+                    input('hit a key')
 
                 exps.append(exp)
                 noise_exps.append(nexp)
@@ -293,6 +294,7 @@ class MultiBandCoadds(object):
                     coadd_wcs=self.coadd_wcs,
                     coadd_dims=self.coadd_dims,
                     psf_dims=self.psf_dims,
+                    loglevel=self.loglevel,
                 )
                 self.coadds[band].meta['mask_frac'] = get_masked_frac(
                     mask=self.coadds[band].ormask,
@@ -306,6 +308,7 @@ class MultiBandCoadds(object):
             coadd_wcs=self.coadd_wcs,
             coadd_dims=self.coadd_dims,
             psf_dims=self.psf_dims,
+            loglevel=self.loglevel,
         )
         self.coadds['all'].meta['mask_frac'] = get_masked_frac(
             mask=self.coadds['all'].ormask,
@@ -325,9 +328,14 @@ class CoaddObs(ngmix.Observation):
                  psf_exps,
                  coadd_wcs,
                  coadd_dims,
-                 psf_dims):
+                 psf_dims,
+                 loglevel='info'):
 
         import galsim
+
+        self.log = lsst.log.getLogger("CoaddObs")
+        self.log.setLevel(getattr(lsst.log, loglevel.upper()))
+        self.loglevel = loglevel
 
         self.exps = exps
         self.psf_exps = psf_exps
@@ -354,6 +362,9 @@ class CoaddObs(ngmix.Observation):
         self._finish_init()
 
     def show(self):
+        self.log.info('showing coadd in ds9')
+        vis.show_image_and_mask(self.coadd_exp)
+        # this will block
         vis.show_images(
             [
                 self.image,
