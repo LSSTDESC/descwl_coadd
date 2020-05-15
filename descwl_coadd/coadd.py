@@ -6,6 +6,7 @@ from numba import njit
 
 import lsst.geom as geom
 from lsst.afw.geom import makeSkyWcs
+from lsst.daf.base import PropertyList
 from lsst.meas.algorithms import KernelPsf
 from lsst.afw.math import FixedKernel
 import lsst.afw.image as afw_image
@@ -641,20 +642,43 @@ def make_stack_wcs(wcs):
     """
     convert galsim tan wcs to stack wcs
     """
-    crpix = wcs.crpix
-    stack_crpix = geom.Point2D(crpix[0], crpix[1])
-    cd_matrix = wcs.cd
 
-    crval = geom.SpherePoint(
-        wcs.center.ra/coord.radians,
-        wcs.center.dec/coord.radians,
-        geom.radians,
-    )
-    return makeSkyWcs(
-        crpix=stack_crpix,
-        crval=crval,
-        cdMatrix=cd_matrix,
-    )
+    if wcs.wcs_type == 'TAN':
+        crpix = wcs.crpix
+        stack_crpix = geom.Point2D(crpix[0], crpix[1])
+        cd_matrix = wcs.cd
+
+        crval = geom.SpherePoint(
+            wcs.center.ra/coord.radians,
+            wcs.center.dec/coord.radians,
+            geom.radians,
+        )
+        stack_wcs = makeSkyWcs(
+            crpix=stack_crpix,
+            crval=crval,
+            cdMatrix=cd_matrix,
+        )
+    elif wcs.wcs_type == 'TAN-SIP':
+        import galsim
+
+        # this is not used if the lower bounds are 1, but the extra keywords
+        # GS_{X,Y}MIN are set which we will remove below
+
+        fake_bounds = galsim.BoundsI(1, 10, 1, 10)
+        hdr = {}
+        wcs.writeToFitsHeader(hdr, fake_bounds)
+
+        del hdr["GS_XMIN"]
+        del hdr["GS_YMIN"]
+
+        metadata = PropertyList()
+
+        for key, value in hdr.items():
+            metadata.set(key, value)
+
+        stack_wcs = makeSkyWcs(metadata)
+
+    return stack_wcs
 
 
 def make_stack_psf_wcs(*, dims, offset, jac, world_origin):
