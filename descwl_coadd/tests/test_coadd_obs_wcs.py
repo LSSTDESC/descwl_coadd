@@ -1,3 +1,4 @@
+import os
 import pytest
 import numpy as np
 
@@ -5,6 +6,9 @@ from descwl_shear_sims import Sim
 from ..coadd import MultiBandCoadds
 
 
+@pytest.mark.skipif(
+    "CATSIM_DIR" not in os.environ,
+    reason='simulation input data is not present')
 @pytest.mark.parametrize('wcs_type', ['tan', 'tan-sip'])
 def test_coadd_obs_wcs_smoke(wcs_type):
     rng = np.random.RandomState(8312)
