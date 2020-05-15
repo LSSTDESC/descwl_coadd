@@ -644,7 +644,6 @@ def make_stack_wcs(wcs):
     """
 
     if wcs.wcs_type == 'TAN':
-        print('TAN')
         crpix = wcs.crpix
         stack_crpix = geom.Point2D(crpix[0], crpix[1])
         cd_matrix = wcs.cd
@@ -661,7 +660,6 @@ def make_stack_wcs(wcs):
         )
     elif wcs.wcs_type == 'TAN-SIP':
         import galsim
-        print('TAN-SIP')
 
         # this is not used if the lower bounds are 1, but the extra keywords
         # GS_{X,Y}MIN are set which we will remove below
