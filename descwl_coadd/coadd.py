@@ -2,9 +2,11 @@
 coadd lsst dm stack exposures
 """
 import numpy as np
+from numba import njit
 
 import lsst.geom as geom
 from lsst.afw.geom import makeSkyWcs
+from lsst.daf.base import PropertyList
 from lsst.meas.algorithms import KernelPsf
 from lsst.afw.math import FixedKernel
 import lsst.afw.image as afw_image
@@ -51,19 +53,34 @@ class MultiBandCoadds(object):
     byband: bool
         If True, make coadds for individual bands as well as over all
         bands
+    show: bool
+        If True show some images, default False
+    loglevel: string
+        Default info
+    rng: np.random.RandomState
+        Random state used for replace_bright
+    use_stack_interp: bool
+        If True, use the stacks interpolation, default False
+    interp_bright: bool
+        If True, mark BRIGHT as SAT and do interpolation
+    replace_bright: bool
+        If True, replace BRIGHT with nois.
     """
-    def __init__(self, *,
-                 data,
-                 coadd_wcs,
-                 coadd_dims,
-                 psf_dims,
-                 byband=True,
-                 use_stack_interp=False,
-                 show=False,
-                 loglevel='info',
-                 rng=None,
-                 interp_bright=False,
-                 replace_bright=False):
+    def __init__(
+        self, *,
+        data,
+        coadd_wcs,
+        coadd_dims,
+        psf_dims,
+        byband=True,
+        show=False,
+        loglevel='info',
+        rng=None,
+        use_stack_interp=False,
+        interp_bright=False,
+        replace_bright=False,
+        max_mask_frac=0.1,
+    ):
 
         assert use_stack_interp is False
 
@@ -73,10 +90,6 @@ class MultiBandCoadds(object):
         )
         self.replace_bright = replace_bright
         self.interp_bright = interp_bright
-        if self.interp_bright:
-            self.flags2interp = FLAGS2INTERP | BRIGHT
-        else:
-            self.flags2interp = FLAGS2INTERP
 
         self._show = show
         self.log = lsst.log.getLogger("MultiBandCoadds")
@@ -164,13 +177,15 @@ class MultiBandCoadds(object):
 
                 if not self.use_stack_interp:
                     zero_bits(image=image, noise=noise, mask=bmask, flags=EDGE)
+                    if self.interp_bright:
+                        flag_bright_as_interp(mask=bmask)
 
                     image, noise = interpolate_image_and_noise(
                         image=image,
                         noise=noise,
                         weight=weight,
                         bmask=bmask,
-                        bad_flags=self.flags2interp,
+                        bad_flags=FLAGS2INTERP,
                     )
                     if self._show:
                         vis.show_images([
@@ -246,6 +261,7 @@ class MultiBandCoadds(object):
 
                 if self._show:
                     vis.show_image_and_mask(exp)
+                    input('hit a key')
 
                 exps.append(exp)
                 noise_exps.append(nexp)
@@ -280,6 +296,11 @@ class MultiBandCoadds(object):
                     coadd_wcs=self.coadd_wcs,
                     coadd_dims=self.coadd_dims,
                     psf_dims=self.psf_dims,
+                    loglevel=self.loglevel,
+                )
+                self.coadds[band].meta['mask_frac'] = get_masked_frac(
+                    mask=self.coadds[band].ormask,
+                    flags=FLAGS2INTERP,
                 )
 
         self.coadds['all'] = CoaddObs(
@@ -289,6 +310,11 @@ class MultiBandCoadds(object):
             coadd_wcs=self.coadd_wcs,
             coadd_dims=self.coadd_dims,
             psf_dims=self.psf_dims,
+            loglevel=self.loglevel,
+        )
+        self.coadds['all'].meta['mask_frac'] = get_masked_frac(
+            mask=self.coadds['all'].ormask,
+            flags=FLAGS2INTERP,
         )
         if self._show:
             self.coadds['all'].show()
@@ -304,9 +330,14 @@ class CoaddObs(ngmix.Observation):
                  psf_exps,
                  coadd_wcs,
                  coadd_dims,
-                 psf_dims):
+                 psf_dims,
+                 loglevel='info'):
 
         import galsim
+
+        self.log = lsst.log.getLogger("CoaddObs")
+        self.log.setLevel(getattr(lsst.log, loglevel.upper()))
+        self.loglevel = loglevel
 
         self.exps = exps
         self.psf_exps = psf_exps
@@ -333,6 +364,9 @@ class CoaddObs(ngmix.Observation):
         self._finish_init()
 
     def show(self):
+        self.log.info('showing coadd in ds9')
+        vis.show_image_and_mask(self.coadd_exp)
+        # this will block
         vis.show_images(
             [
                 self.image,
@@ -609,20 +643,43 @@ def make_stack_wcs(wcs):
     """
     convert galsim tan wcs to stack wcs
     """
-    crpix = wcs.crpix
-    stack_crpix = geom.Point2D(crpix[0], crpix[1])
-    cd_matrix = wcs.cd
 
-    crval = geom.SpherePoint(
-        wcs.center.ra/coord.radians,
-        wcs.center.dec/coord.radians,
-        geom.radians,
-    )
-    return makeSkyWcs(
-        crpix=stack_crpix,
-        crval=crval,
-        cdMatrix=cd_matrix,
-    )
+    if wcs.wcs_type == 'TAN':
+        crpix = wcs.crpix
+        stack_crpix = geom.Point2D(crpix[0], crpix[1])
+        cd_matrix = wcs.cd
+
+        crval = geom.SpherePoint(
+            wcs.center.ra/coord.radians,
+            wcs.center.dec/coord.radians,
+            geom.radians,
+        )
+        stack_wcs = makeSkyWcs(
+            crpix=stack_crpix,
+            crval=crval,
+            cdMatrix=cd_matrix,
+        )
+    elif wcs.wcs_type == 'TAN-SIP':
+        import galsim
+
+        # this is not used if the lower bounds are 1, but the extra keywords
+        # GS_{X,Y}MIN are set which we will remove below
+
+        fake_bounds = galsim.BoundsI(1, 10, 1, 10)
+        hdr = {}
+        wcs.writeToFitsHeader(hdr, fake_bounds)
+
+        del hdr["GS_XMIN"]
+        del hdr["GS_YMIN"]
+
+        metadata = PropertyList()
+
+        for key, value in hdr.items():
+            metadata.set(key, value)
+
+        stack_wcs = makeSkyWcs(metadata)
+
+    return stack_wcs
 
 
 def make_stack_psf_wcs(*, dims, offset, jac, world_origin):
@@ -734,10 +791,9 @@ def zero_bits(*, image, noise, mask, flags):
         noise[w] = 0.0
 
 
-'''
-def flag_bright_star_as_interp(*, mask):
+def flag_bright_as_interp(*, mask):
     """
-    flag BRIGHT also as SAT so it will be interpolated
+    flag BRIGHT also as SAT so no detections will occur there
 
     we currently pull the bitmask value from the descwl_shear_sims
     package
@@ -745,6 +801,20 @@ def flag_bright_star_as_interp(*, mask):
 
     w = np.where((mask & BRIGHT) != 0)
     if w[0].size > 0:
-        SAT = afw_image.Mask.getPlaneBitMask('SAT')
-        mask[w] |= SAT
-'''
+        satval = afw_image.Mask.getPlaneBitMask('SAT')
+        mask[w] |= satval
+
+
+@njit
+def get_masked_frac(*, mask, flags):
+    nrows, ncols = mask.shape
+
+    npixels = mask.size
+    nmasked = 0
+
+    for row in range(nrows):
+        for col in range(ncols):
+            if mask[row, col] & flags != 0:
+                nmasked += 1
+
+    return nmasked/npixels
