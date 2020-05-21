@@ -139,3 +139,4 @@ cython_debug/
 
 # custom stuff
 pytest_session.txt
+*.png
