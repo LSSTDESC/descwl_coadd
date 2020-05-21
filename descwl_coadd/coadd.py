@@ -341,9 +341,12 @@ class CoaddObs(ngmix.Observation):
         The list of noise images to coadd.
     psf_exps : list of afw_image.ExposureF
         the list of PSF images to coadd.
-    coadd_wcs,
+    coadd_wcs : DM stack sky WCS object
+        The WCS for the final coadd.
     coadd_dims : 2-tuple of ints
+        The dimensions of the coadd in (x, y)
     psf_dims : 2-tuple of ints
+        The dimensions of the psf coadd in (x, y).
     loglevel : str, optional
         The logging level. Default is 'info'.
 
