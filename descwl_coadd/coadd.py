@@ -22,7 +22,7 @@ import coord
 import ngmix
 
 from . import vis
-from .interp import interpolate_image_and_noise
+from .interp import interpolate_image_and_noise, replace_flag_with_noise
 
 # only place to get this for now
 from descwl_shear_sims.lsst_bits import BRIGHT
@@ -39,7 +39,8 @@ FLAGS2INTERP = (
 
 
 class MultiBandCoadds(object):
-    """
+    """Coadd images within and across bands.
+
     Parameters
     ----------
     data: dict
@@ -48,8 +49,10 @@ class MultiBandCoadds(object):
         example see the simple sim from descwl_shear_testing
     coadd_wcs: galsim wcs
         wcs for final cuadd
-    coadd_dims: (nx, ny)
-        Currently doing x first rather than row, col
+    coadd_dims: (ny, nx)
+        Dimensions of the main coadd.
+    psf_dims: (ny, nx)
+        Dimensions of the PSF coadd.
     byband: bool
         If True, make coadds for individual bands as well as over all
         bands
@@ -64,7 +67,7 @@ class MultiBandCoadds(object):
     interp_bright: bool
         If True, mark BRIGHT as SAT and do interpolation
     replace_bright: bool
-        If True, replace BRIGHT with nois.
+        If True, replace BRIGHT with noise.
     """
     def __init__(
         self, *,
@@ -79,7 +82,6 @@ class MultiBandCoadds(object):
         use_stack_interp=False,
         interp_bright=False,
         replace_bright=False,
-        max_mask_frac=0.1,
     ):
 
         assert use_stack_interp is False
@@ -166,12 +168,13 @@ class MultiBandCoadds(object):
                 weight = se_obs.weight.array
 
                 if self.replace_bright:
-                    replace_bright_with_noise(
+                    replace_flag_with_noise(
                         rng=self._rng,
                         image=image,
                         noise_image=noise,
                         weight=weight,
                         mask=bmask,
+                        flag=BRIGHT,
                     )
 
                 if not self.use_stack_interp:
@@ -320,8 +323,42 @@ class MultiBandCoadds(object):
 
 
 class CoaddObs(ngmix.Observation):
-    """
-    make coadd exposure for the input exposures and noise exposures
+    """Make a coadd exposure for the input exposures and noise exposures.
+
+    Note that this class is a subclass of an `ngmix.Observation` and so it
+    has all of the usual methods and attributes.
+
+    All input parameters are stored as attriubutes on the object.
+
+    Parameters
+    ----------
+    exps : list of afw_image.ExposureF
+        The list of images to coadd.
+    noise_exps : list of afw_image.ExposureF
+        The list of noise images to coadd.
+    psf_exps : list of afw_image.ExposureF
+        the list of PSF images to coadd.
+    coadd_wcs : DM stack sky WCS object
+        The WCS for the final coadd.
+    coadd_dims : 2-tuple of ints
+        The dimensions of the coadd in (y, x)
+    psf_dims : 2-tuple of ints
+        The dimensions of the psf coadd in (y, x).
+    loglevel : str, optional
+        The logging level. Default is 'info'.
+
+    Attributes
+    ----------
+    interp : str
+        The kind of interpolation used for the coadd. Currently always lanczos3.
+    coadd_psf_wcs : DM stack sky WCS object
+        The WCS for the PSF exposure.
+    coadd_psf_exp : DM stack exposure
+        The coadded PSF.
+    coadd_exp : DM stack exposure
+        The coadded image.
+    coadd_noise_exp : DM stack exposure
+        The coadded noise image.
     """
     def __init__(self, *,
                  exps,
@@ -363,6 +400,7 @@ class CoaddObs(ngmix.Observation):
         self._finish_init()
 
     def show(self):
+        """show the output coadd in DS9"""
         self.log.info('showing coadd in ds9')
         vis.show_image_and_mask(self.coadd_exp)
         # this will block
@@ -372,7 +410,7 @@ class CoaddObs(ngmix.Observation):
                 self.coadd_exp.mask.array,
                 self.noise,
                 self.coadd_noise_exp.mask.array,
-                self.psf.image,
+                self.coadd_psf_exp.image.array,
                 # self.weight,
             ],
         )
@@ -381,30 +419,19 @@ class CoaddObs(ngmix.Observation):
         """
         make warps and coadds for images and noise fields
         """
-        psf_data = self._make_warps(
-            exps=self.psf_exps,
-            dims=self.psf_dims,
-            wcs=self.coadd_psf_wcs,
-            dopsf=False,
-        )
-        coadd_psf_exp = self._make_coadd(**psf_data)
-
-        pimage = coadd_psf_exp.image.array
-        wbad = np.where(~np.isfinite(pimage))
-
-        if wbad[0].size == pimage.size:
-            raise ValueError('no good pixels in the psf')
-
-        pimage[wbad] = 0.0
-
         image_data = self._make_warps(
             exps=self.exps,
             dims=self.coadd_dims,
             wcs=self.coadd_wcs,
             dopsf=True,
         )
-        self.coadd_exp = self._make_coadd(**image_data)
-        self.coadd_exp.setPsf(make_stack_psf(pimage))
+
+        psf_data = self._make_warps(
+            exps=self.psf_exps,
+            dims=self.psf_dims,
+            wcs=self.coadd_psf_wcs,
+            dopsf=False,
+        )
 
         noise_data = self._make_warps(
             exps=self.noise_exps,
@@ -412,6 +439,23 @@ class CoaddObs(ngmix.Observation):
             wcs=self.coadd_wcs,
             dopsf=True,
         )
+
+        # we need the weights in the coadds to be the same
+        # so we replace them here
+        psf_data["weights"] = image_data["weights"]
+        noise_data["weights"] = image_data["weights"]
+
+        # now we coadd
+        self.coadd_psf_exp = self._make_coadd(**psf_data)
+        pimage = self.coadd_psf_exp.image.array
+        wbad = np.where(~np.isfinite(pimage))
+        if wbad[0].size == pimage.size:
+            raise ValueError('no good pixels in the psf')
+        pimage[wbad] = 0.0
+
+        self.coadd_exp = self._make_coadd(**image_data)
+        self.coadd_exp.setPsf(make_stack_psf(pimage))
+
         self.coadd_noise_exp = self._make_coadd(**noise_data)
         self.coadd_noise_exp.setPsf(make_stack_psf(pimage))
 
@@ -788,28 +832,6 @@ def zero_bits(*, image, noise, mask, flags):
     if w[0].size > 0:
         image[w] = 0.0
         noise[w] = 0.0
-
-
-def replace_bright_with_noise(*, rng, image, noise_image, weight, mask):
-    """
-    replace regions marked bright with noise
-
-    we currently pull the bitmask value from the descwl_shear_sims
-    package
-    """
-
-    mravel = mask.ravel()
-    imravel = image.ravel()
-    nimravel = noise_image.ravel()
-    wtravel = weight.ravel()
-
-    w, = np.where((mravel & BRIGHT) != 0)
-    if w.size > 0:
-        medweight = np.median(weight)
-        err = np.sqrt(1.0/medweight)
-        imravel[w] = rng.normal(scale=err, size=w.size)
-        nimravel[w] = rng.normal(scale=err, size=w.size)
-        wtravel[w] = medweight
 
 
 def flag_bright_as_interp(*, mask):
