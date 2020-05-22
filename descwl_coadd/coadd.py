@@ -49,10 +49,10 @@ class MultiBandCoadds(object):
         example see the simple sim from descwl_shear_testing
     coadd_wcs: galsim wcs
         wcs for final cuadd
-    coadd_dims: (nx, ny)
-        Dimensions of the main coadd. Currently doing x first rather than row, col
-    psf_dims: (nx, ny)
-        Dimensions of the PSF coadd. Currently doing x first rather than row, col
+    coadd_dims: (ny, nx)
+        Dimensions of the main coadd.
+    psf_dims: (ny, nx)
+        Dimensions of the PSF coadd.
     byband: bool
         If True, make coadds for individual bands as well as over all
         bands
@@ -68,8 +68,6 @@ class MultiBandCoadds(object):
         If True, mark BRIGHT as SAT and do interpolation
     replace_bright: bool
         If True, replace BRIGHT with noise.
-    max_mask_frac : float
-        The maximum masked fraction for an image.
     """
     def __init__(
         self, *,
@@ -84,7 +82,6 @@ class MultiBandCoadds(object):
         use_stack_interp=False,
         interp_bright=False,
         replace_bright=False,
-        max_mask_frac=0.1,
     ):
 
         assert use_stack_interp is False
@@ -344,9 +341,9 @@ class CoaddObs(ngmix.Observation):
     coadd_wcs : DM stack sky WCS object
         The WCS for the final coadd.
     coadd_dims : 2-tuple of ints
-        The dimensions of the coadd in (x, y)
+        The dimensions of the coadd in (y, x)
     psf_dims : 2-tuple of ints
-        The dimensions of the psf coadd in (x, y).
+        The dimensions of the psf coadd in (y, x).
     loglevel : str, optional
         The logging level. Default is 'info'.
 
