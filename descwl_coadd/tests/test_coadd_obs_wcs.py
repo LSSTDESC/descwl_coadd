@@ -32,12 +32,3 @@ def test_coadd_obs_wcs_smoke(wcs_type):
         coadd_dims=coadd_dims,
         psf_dims=psf_dims,
     )
-
-    # not coadding individual bands
-    _ = MultiBandCoadds(
-        data=data,
-        coadd_wcs=sim.coadd_wcs,
-        coadd_dims=coadd_dims,
-        psf_dims=psf_dims,
-        byband=False,
-    )
