@@ -25,30 +25,12 @@ def test_coadd_obs_smoke():
         psf_dims=psf_dims,
     )
 
-    coadd = coadds.get_coadd()
-    assert coadd.coadd_exp.image.array.shape == coadd_dims
-    assert coadd.image.shape == coadd_dims
-    assert coadd.noise.shape == coadd_dims
-    assert coadd.psf.image.shape == psf_dims
-
     for band in coadds.bands:
-        bcoadd = coadds.get_coadd(band=band)
+        bcoadd = coadds.coadds[band]
         assert bcoadd.coadd_exp.image.array.shape == coadd_dims
         assert bcoadd.image.shape == coadd_dims
         assert bcoadd.noise.shape == coadd_dims
         assert bcoadd.psf.image.shape == psf_dims
-
-    # not coadding individual bands
-    coadds = MultiBandCoadds(
-        data=data,
-        coadd_wcs=sim.coadd_wcs,
-        coadd_dims=coadd_dims,
-        psf_dims=psf_dims,
-        byband=False,
-    )
-
-    for band in coadds.bands:
-        assert band not in coadds.coadds
 
 
 def test_coadd_obs_weights():
