@@ -132,12 +132,11 @@ def test_coadd_image_correct(crazy_wcs, crazy_obj):
         coadd_wcs=coadd_wcs,
         coadd_dims=(coadd_dim, coadd_dim),
         psf_dims=(53, 53),
-        byband=False,
         loglevel='debug',
         rng=np.random.RandomState(seed=10),
     )
 
-    coadd = mbcoadd.get_coadd()
+    coadd = mbcoadd.coadds["i"]
     coadd_img = coadd.image
     coadd_psf = coadd.psf.image
 

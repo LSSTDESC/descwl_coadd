@@ -110,24 +110,6 @@ class MultiBandCoadds(object):
         """
         return [k for k in self.data]
 
-    def get_coadd(self, band=None):
-        """
-        get a coadd
-
-        Parameters
-        ----------
-        band: str, optional
-            Band for coadd, if None return coadd over all bands
-
-        Returns
-        -------
-        Coadd for band
-        """
-        if band is None:
-            return self.coadds['all']
-        else:
-            return self.coadds[band]
-
     def _make_exps(self):
         """
         make lsst stack exposures for each image and noise image
