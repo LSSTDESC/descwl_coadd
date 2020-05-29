@@ -39,7 +39,7 @@ FLAGS2INTERP = (
 
 
 class MultiBandCoadds(object):
-    """Coadd images within and across bands.
+    """Coadd images bands.  Coaddds are always per band.
 
     Parameters
     ----------
@@ -53,9 +53,6 @@ class MultiBandCoadds(object):
         Dimensions of the main coadd.
     psf_dims: (ny, nx)
         Dimensions of the PSF coadd.
-    byband: bool
-        If True, make coadds for individual bands as well as over all
-        bands
     show: bool
         If True show some images, default False
     loglevel: string
@@ -75,7 +72,6 @@ class MultiBandCoadds(object):
         coadd_wcs,
         coadd_dims,
         psf_dims,
-        byband=True,
         show=False,
         loglevel='info',
         rng=None,
@@ -102,7 +98,6 @@ class MultiBandCoadds(object):
         self.coadd_wcs = coadd_wcs
         self.coadd_dims = coadd_dims
         self.psf_dims = psf_dims
-        self.byband = byband
         self.use_stack_interp = use_stack_interp
 
         self._make_exps()
@@ -289,37 +284,24 @@ class MultiBandCoadds(object):
         # dict are now ordered since python 3.6
         self.coadds = {}
 
-        if self.byband:
-            for band in self.byband_exps:
-                self.coadds[band] = CoaddObs(
-                    exps=self.byband_exps[band],
-                    psf_exps=self.byband_psf_exps[band],
-                    noise_exps=self.byband_noise_exps[band],
-                    coadd_wcs=self.coadd_wcs,
-                    coadd_dims=self.coadd_dims,
-                    psf_dims=self.psf_dims,
-                    loglevel=self.loglevel,
-                )
-                self.coadds[band].meta['mask_frac'] = get_masked_frac(
-                    mask=self.coadds[band].ormask,
-                    flags=FLAGS2INTERP,
-                )
+        for band in self.byband_exps:
+            self.coadds[band] = CoaddObs(
+                exps=self.byband_exps[band],
+                psf_exps=self.byband_psf_exps[band],
+                noise_exps=self.byband_noise_exps[band],
+                coadd_wcs=self.coadd_wcs,
+                coadd_dims=self.coadd_dims,
+                psf_dims=self.psf_dims,
+                loglevel=self.loglevel,
+            )
+            self.coadds[band].meta['mask_frac'] = get_masked_frac(
+                mask=self.coadds[band].ormask,
+                flags=FLAGS2INTERP,
+            )
 
-        self.coadds['all'] = CoaddObs(
-            exps=self.exps,
-            noise_exps=self.noise_exps,
-            psf_exps=self.psf_exps,
-            coadd_wcs=self.coadd_wcs,
-            coadd_dims=self.coadd_dims,
-            psf_dims=self.psf_dims,
-            loglevel=self.loglevel,
-        )
-        self.coadds['all'].meta['mask_frac'] = get_masked_frac(
-            mask=self.coadds['all'].ormask,
-            flags=FLAGS2INTERP,
-        )
         if self._show:
-            self.coadds['all'].show()
+            for band in self.coadds:
+                self.coadds[band].show()
 
 
 class CoaddObs(ngmix.Observation):
