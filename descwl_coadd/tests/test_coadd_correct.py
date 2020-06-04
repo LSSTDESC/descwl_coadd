@@ -32,9 +32,6 @@ def _plot_cmp(coadd_img, true_coadd_img, rtol, atol, crazy_obj, crazy_wcs, name)
 @pytest.mark.parametrize('crazy_obj', [False, True])
 @pytest.mark.parametrize('crazy_wcs', [False, True])
 def test_coadd_image_correct(crazy_wcs, crazy_obj):
-    if crazy_obj:
-        pytest.xfail(
-            "The DM stack is ignoring our coadd weights and so this test fails!")
     n_coadd = 10
     coadd_dim = 53
     coadd_cen = (coadd_dim + 1) / 2
