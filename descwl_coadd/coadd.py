@@ -451,7 +451,9 @@ class CoaddObs(ngmix.Observation):
         wbad = np.where(~np.isfinite(pimage))
         if wbad[0].size == pimage.size:
             raise ValueError('no good pixels in the psf')
-        pimage[wbad] = 0.0
+        if wbad[0].size > 0:
+            self.log.info('zeroing %d bad psf pixels' % wbad[0].size)
+            pimage[wbad] = 0.0
 
         self.coadd_exp = self._make_coadd(**image_data)
         self.coadd_exp.setPsf(make_stack_psf(pimage))
