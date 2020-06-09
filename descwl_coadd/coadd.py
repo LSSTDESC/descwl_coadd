@@ -25,7 +25,10 @@ from . import vis
 from .interp import interpolate_image_and_noise, replace_flag_with_noise
 
 # only place to get this for now
-from descwl_shear_sims.lsst_bits import BRIGHT
+try:
+    from descwl_shear_sims.lsst_bits import BRIGHT
+except ImportError:
+    BRIGHT = 2**30
 
 EDGE = afw_image.Mask.getPlaneBitMask('EDGE')
 
