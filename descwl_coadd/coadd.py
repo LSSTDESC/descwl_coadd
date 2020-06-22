@@ -189,6 +189,10 @@ class MultiBandCoadds(object):
                         bmask=bmask,
                         bad_flags=FLAGS2INTERP,
                     )
+                    if image is None:
+                        self.log.info('mask frac too high, skipping epoch')
+                        continue
+
                     if self._show:
                         vis.show_images([
                             image,
@@ -288,6 +292,13 @@ class MultiBandCoadds(object):
 
         # dict are now ordered since python 3.6
         self.coadds = {}
+
+        if len(self.exps) == 0:
+            self.log.info('no good exps')
+            self.coadds['all'] = None
+            for band in self.byband_exps:
+                self.coadds[band] = None
+            return
 
         if self.byband:
             for band in self.byband_exps:
