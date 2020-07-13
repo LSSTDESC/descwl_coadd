@@ -1,6 +1,6 @@
 import numpy as np
 
-from descwl_shear_sims import Sim
+from descwl_shear_sims.simple_sim import SimpleSim
 from ..coadd import (
     MultiBandCoadds,
     make_stack_psf,
@@ -18,7 +18,7 @@ def test_cosmics():
     cosmic_flag = get_cosmic_flag()
 
     rng = np.random.RandomState(8312)
-    sim = Sim(
+    sim = SimpleSim(
         rng=rng,
         epochs_per_band=2,
         cosmic_rays=True,
