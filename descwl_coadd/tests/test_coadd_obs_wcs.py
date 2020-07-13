@@ -2,7 +2,7 @@ import os
 import pytest
 import numpy as np
 
-from descwl_shear_sims import Sim
+from descwl_shear_sims.simple_sim import SimpleSim
 from ..coadd import MultiBandCoadds
 
 
@@ -12,7 +12,7 @@ from ..coadd import MultiBandCoadds
 @pytest.mark.parametrize('wcs_type', ['tan', 'tan-sip'])
 def test_coadd_obs_wcs_smoke(wcs_type):
     rng = np.random.RandomState(8312)
-    sim = Sim(
+    sim = SimpleSim(
         rng=rng,
         bands=["r", "i"],
         epochs_per_band=1,

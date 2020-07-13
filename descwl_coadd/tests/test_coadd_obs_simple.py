@@ -2,7 +2,7 @@ import numpy as np
 import galsim
 import pytest
 
-from descwl_shear_sims import SEObs
+from descwl_shear_sims.se_obs import SEObs
 from ..coadd_simple import MultiBandCoaddsSimple
 
 DIMS = (11, 13)
