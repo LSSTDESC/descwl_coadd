@@ -13,7 +13,7 @@ from descwl_shear_sims.sim import (
 from ..coadd import MultiBandCoaddsDM
 
 
-def _make_sim(rng, psf_type):
+def _make_sim(rng, psf_type, epochs_per_band=3):
     seed = 431
     rng = np.random.RandomState(seed)
     buff = 5
@@ -45,17 +45,18 @@ def _make_sim(rng, psf_type):
         galaxy_catalog=galaxy_catalog,
         star_catalog=star_catalog,
         coadd_dim=coadd_dim,
+        epochs_per_band=epochs_per_band,
         g1=0.02,
         g2=0.00,
+        bands=['i', 'z'],
         psf=psf,
         dither=True,
         rotate=True,
     )
 
 
-# @pytest.mark.parametrize('psf_type', ['gauss', 'ps'])
-@pytest.mark.parametrize('psf_type', ['gauss'])
-def test_coadd_obs_smoke(psf_type):
+@pytest.mark.parametrize('psf_type', ['gauss', 'ps'])
+def test_coadd_sim_smoke(psf_type):
     rng = np.random.RandomState(8312)
     data = _make_sim(rng, psf_type)
 
@@ -63,7 +64,6 @@ def test_coadd_obs_smoke(psf_type):
     psf_dims = data['psf_dims']
 
     # coadding individual bands as well as over bands
-
     coadds = MultiBandCoaddsDM(
         data=data['band_data'],
         coadd_wcs=data['coadd_wcs'],
@@ -97,28 +97,21 @@ def test_coadd_obs_smoke(psf_type):
         assert band not in coadds.coadds
 
 
-'''
-def test_coadd_obs_weights():
+def test_coadd_sim_noise():
     """
     ensure the psf and noise var are set close, so
     that the relative weight is right
     """
-    rng = np.random.RandomState(8312)
-    sim = SimpleSim(
-        rng=rng,
-        epochs_per_band=2,
-    )
-    data = sim.gen_sim()
+    rng = np.random.RandomState(32)
+    data = _make_sim(rng=rng, psf_type='gauss')
 
-    coadd_dims = (sim.coadd_dim,)*2
+    coadd_dims = data['coadd_dims']
+    psf_dims = data['psf_dims']
 
     # coadding individual bands as well as over bands
-    psf_dim = sim.psf_dim
-    psf_dims = (psf_dim,)*2
-
     coadds = MultiBandCoaddsDM(
-        data=data,
-        coadd_wcs=sim.coadd_wcs,
+        data=data['band_data'],
+        coadd_wcs=data['coadd_wcs'],
         coadd_dims=coadd_dims,
         psf_dims=psf_dims,
     )
@@ -133,4 +126,8 @@ def test_coadd_obs_weights():
 
         assert abs(pmed/emed-1) < 1.0e-3
         assert abs(nmed/emed-1) < 1.0e-3
-'''
+
+        bmask = nexp.mask.array
+        w = np.where(bmask == 0)
+        nvar = nexp.image.array[w].var()
+        assert abs(nvar / emed - 1) < 0.02
