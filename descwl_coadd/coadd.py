@@ -1028,7 +1028,9 @@ class CoaddObsDM(ngmix.Observation):
         )
 
     def show(self):
-        """show the output coadd in DS9"""
+        """
+        show the output coadd in DS9
+        """
         self.log.info('showing coadd in ds9')
         vis.show_image_and_mask(self.coadd_exp)
         # this will block
@@ -1092,6 +1094,8 @@ class CoaddObsDM(ngmix.Observation):
     def _make_warps(self, *, exps, dims, wcs, dopsf=False):
         """
         make the warp images
+
+        TODO warp individual exposures and add them in one at a time
         """
 
         # Setup coadd/warp psf model
@@ -1176,6 +1180,8 @@ class CoaddObsDM(ngmix.Observation):
     def _make_coadd(self, *, wexps, weights, input_recorder, psf_config=None):
         """
         make a coadd from warp images, as well as psf coadd
+
+        TODO do "on-the-fly" warping and coadding to save memory
         """
 
         # combine stack images using mean
@@ -1211,35 +1217,42 @@ class CoaddObsDM(ngmix.Observation):
 
     def _get_jac(self, *, cenx, ceny):
         """
-        get jacobian at the coadd image center, and make
-        an ngmix jacobian with center specified (this is not the
+        get jacobian at the coadd image center
+
+        make an ngmix jacobian with specified center specified (this is not the
         position used to evaluate the jacobian)
+
+        Parameters
+        ----------
+        cenx: float
+            Center for the output ngmix jacobian (not place of evaluation)
+        ceny: float
+            Center for the output ngmix jacobian (not place of evaluation)
         """
-        import galsim
 
-        crpix = self.galsim_wcs.crpix
-        galsim_pos = galsim.PositionD(x=crpix[0], y=crpix[1])
+        coadd_cen = self.coadd_wcs.getPixelOrigin()
+        dm_jac = self.coadd_wcs.linearizePixelToSky(coadd_cen, geom.arcseconds)
+        matrix = dm_jac.getLinear().getMatrix()
 
-        galsim_jac = self.galsim_wcs.jacobian(image_pos=galsim_pos)
-
+        # note convention differences
         return ngmix.Jacobian(
             x=cenx,
             y=ceny,
-            dudx=galsim_jac.dudx,
-            dudy=galsim_jac.dudy,
-            dvdx=galsim_jac.dvdx,
-            dvdy=galsim_jac.dvdy,
+            dudx=matrix[1, 1],
+            dudy=-matrix[1, 0],
+            dvdx=matrix[0, 1],
+            dvdy=-matrix[0, 0],
         )
 
-    def _get_psf_obs(self):
+    def _get_coadd_psf_obs(self):
         """
         get the psf observation
         """
-        crpix = self.galsim_wcs.crpix
-        stack_pos = geom.Point2D(crpix[0], crpix[1])
+
+        coadd_cen = self.coadd_wcs.getPixelOrigin()
 
         psf_obj = self.coadd_exp.getPsf()
-        psf_image = psf_obj.computeKernelImage(stack_pos).array
+        psf_image = psf_obj.computeKernelImage(coadd_cen).array
 
         psf_cen = (np.array(psf_image.shape)-1.0)/2.0
 
@@ -1258,7 +1271,7 @@ class CoaddObsDM(ngmix.Observation):
         finish the init by sending the image etc. to the
         Observation init
         """
-        psf_obs = self._get_psf_obs()  # noqa
+        psf_obs = self._get_coadd_psf_obs()  # noqa
 
         image = self.coadd_exp.image.array
         noise = self.coadd_noise_exp.image.array
