@@ -67,8 +67,6 @@ class MultiBandCoadds(object):
         If True, use the stacks interpolation, default False
     interp_bright: bool
         If True, mark BRIGHT as SAT and do interpolation
-    replace_bright: bool
-        If True, replace BRIGHT with noise.
     """
     def __init__(
         self, *,
@@ -716,6 +714,8 @@ class MultiBandCoaddsDM(object):
         Default info
     use_stack_interp: bool
         If True, use the stacks interpolation, default False
+    interp_bright: bool
+        If True, mark BRIGHT as SAT and do interpolation
     """
     def __init__(
         self, *,
@@ -726,11 +726,13 @@ class MultiBandCoaddsDM(object):
         byband=True,
         show=False,
         loglevel='info',
+        interp_bright=False,
         use_stack_interp=False,
     ):
 
         assert use_stack_interp is False
 
+        self.interp_bright = interp_bright
         self._show = show
         self.log = lsst.log.getLogger("MultiBandCoadds")
         self.log.setLevel(getattr(lsst.log, loglevel.upper()))
@@ -815,7 +817,8 @@ class MultiBandCoaddsDM(object):
                 if not self.use_stack_interp:
                     zero_bits(image=image, noise=noise, mask=bmask, flags=EDGE)
 
-                    flag_bright_as_interp(mask=bmask)
+                    if self.interp_bright:
+                        flag_bright_as_interp(mask=bmask)
 
                     iimage, inoise = interpolate_image_and_noise(
                         image=image,
