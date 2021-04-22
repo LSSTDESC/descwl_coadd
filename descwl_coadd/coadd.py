@@ -242,6 +242,11 @@ class MultiBandCoadds(object):
                 nexp = afw_image.ExposureF(nmasked_image)
                 psf_exp = afw_image.ExposureF(pmasked_image)
 
+                filter_label = afw_image.FilterLabel(band=band, physical=band)
+                exp.setFilterLabel(filter_label)
+                nexp.setFilterLabel(filter_label)
+                psf_exp.setFilterLabel(filter_label)
+
                 exp.setPsf(make_stack_psf(psf_image))
                 nexp.setPsf(make_stack_psf(psf_image))
 
