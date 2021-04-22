@@ -686,7 +686,7 @@ class CoaddObs(ngmix.Observation):
         )
 
 
-class MultiBandCoaddsDMExps(object):
+class MultiBandCoaddsDM(object):
     """
     Coadd images within and across bands with input DM exposures
 
@@ -801,7 +801,7 @@ class MultiBandCoaddsDMExps(object):
 
                 image = exp.image.array
                 bmask = exp.mask.array
-                noise = noise_exp.noise.array
+                noise = noise_exp.image.array
 
                 var = exp.variance.array
 
@@ -869,6 +869,7 @@ class MultiBandCoaddsDMExps(object):
 
                 psf_exp = afw_image.ExposureF(pmasked_image)
 
+                psf_exp.setFilterLabel(exp.getFilterLabel())
                 psf_exp.setWcs(psf_stack_wcs)
                 detector = DetectorWrapper().detector
                 psf_exp.setDetector(detector)
@@ -1002,7 +1003,7 @@ class CoaddObsDM(ngmix.Observation):
         self.exps = exps
         self.psf_exps = psf_exps
         self.noise_exps = noise_exps
-        self.coadd_wcs = make_stack_wcs(coadd_wcs)
+        self.coadd_wcs = coadd_wcs
         self.coadd_dims = coadd_dims
         self.psf_dims = psf_dims
 
