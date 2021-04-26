@@ -858,10 +858,12 @@ class MultiBandCoaddsDM(object):
                 cx += psf_offset.x
                 psf_crpix = geom.Point2D(x=cx, y=cy)
 
+                cd_matrix = wcs.getCdMatrix(pos)
+
                 psf_stack_wcs = makeSkyWcs(
                     crpix=psf_crpix,
                     crval=coadd_sky_orig,
-                    cdMatrix=coadd_cd_matrix,
+                    cdMatrix=cd_matrix,
                 )
                 # TODO: deal with zeros
 
