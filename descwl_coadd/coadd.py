@@ -701,8 +701,8 @@ class MultiBandCoaddsDM(object):
         example see the simple sim from descwl_shear_testing
     coadd_wcs: galsim wcs
         wcs for final cuadd
-    coadd_dims: (ny, nx)
-        Dimensions of the main coadd.
+    coadd_bbox: geom.Box2I
+        bbox for coadd, can be in larger grid
     psf_dims: (ny, nx)
         Dimensions of the PSF coadd.
     byband: bool
@@ -721,7 +721,7 @@ class MultiBandCoaddsDM(object):
         self, *,
         data,
         coadd_wcs,
-        coadd_dims,
+        coadd_bbox,
         psf_dims,
         byband=True,
         show=False,
@@ -740,7 +740,8 @@ class MultiBandCoaddsDM(object):
 
         self.data = data
         self.coadd_wcs = coadd_wcs
-        self.coadd_dims = coadd_dims
+        self.coadd_bbox = coadd_bbox
+
         self.psf_dims = psf_dims
         self.byband = byband
         self.use_stack_interp = use_stack_interp
@@ -793,7 +794,6 @@ class MultiBandCoaddsDM(object):
 
         coadd_wcs = self.coadd_wcs
         coadd_sky_orig = coadd_wcs.getSkyOrigin()
-        coadd_cd_matrix = coadd_wcs.getCdMatrix(coadd_wcs.getPixelOrigin())
 
         for band in self.data:
             bdata = self.data[band]
@@ -933,7 +933,7 @@ class MultiBandCoaddsDM(object):
                     psf_exps=self.byband_psf_exps[band],
                     noise_exps=self.byband_noise_exps[band],
                     coadd_wcs=self.coadd_wcs,
-                    coadd_dims=self.coadd_dims,
+                    coadd_bbox=self.coadd_bbox,
                     psf_dims=self.psf_dims,
                     loglevel=self.loglevel,
                 )
@@ -947,7 +947,7 @@ class MultiBandCoaddsDM(object):
             noise_exps=self.noise_exps,
             psf_exps=self.psf_exps,
             coadd_wcs=self.coadd_wcs,
-            coadd_dims=self.coadd_dims,
+            coadd_bbox=self.coadd_bbox,
             psf_dims=self.psf_dims,
             loglevel=self.loglevel,
         )
@@ -977,8 +977,8 @@ class CoaddObsDM(ngmix.Observation):
         the list of PSF images to coadd.
     coadd_wcs : DM stack sky WCS object
         The WCS for the final coadd.
-    coadd_dims : 2-tuple of ints
-        The dimensions of the coadd in (y, x)
+    coadd_bbox: 2-tuple of ints
+        The coadd pixel bbox (may be in larger tract pixels)
     psf_dims : 2-tuple of ints
         The dimensions of the psf coadd in (y, x).
     loglevel : str, optional
@@ -1002,7 +1002,7 @@ class CoaddObsDM(ngmix.Observation):
                  noise_exps,
                  psf_exps,
                  coadd_wcs,
-                 coadd_dims,
+                 coadd_bbox,
                  psf_dims,
                  loglevel='info'):
 
@@ -1014,7 +1014,7 @@ class CoaddObsDM(ngmix.Observation):
         self.psf_exps = psf_exps
         self.noise_exps = noise_exps
         self.coadd_wcs = coadd_wcs
-        self.coadd_dims = coadd_dims
+        self.coadd_bbox = coadd_bbox
         self.psf_dims = psf_dims
 
         self._set_coadd_psf_wcs()
@@ -1062,23 +1062,26 @@ class CoaddObsDM(ngmix.Observation):
         """
         image_data = self._make_warps(
             exps=self.exps,
-            dims=self.coadd_dims,
+            bbox=self.coadd_bbox,
             wcs=self.coadd_wcs,
-            dopsf=True,
+        )
+        # note backwards from C/python order
+        psf_nx, psf_ny = self.psf_dims
+        psf_bbox = geom.Box2I(
+            geom.Point2I(0, 0),
+            geom.Point2I(psf_nx-1, psf_ny-1),
         )
 
         psf_data = self._make_warps(
             exps=self.psf_exps,
-            dims=self.psf_dims,
+            bbox=psf_bbox,
             wcs=self.coadd_psf_wcs,
-            dopsf=False,
         )
 
         noise_data = self._make_warps(
             exps=self.noise_exps,
-            dims=self.coadd_dims,
+            bbox=self.coadd_bbox,
             wcs=self.coadd_wcs,
-            dopsf=True,
         )
 
         # we need the weights in the coadds to be the same
@@ -1102,7 +1105,7 @@ class CoaddObsDM(ngmix.Observation):
         self.coadd_noise_exp = self._make_coadd(**noise_data)
         self.coadd_noise_exp.setPsf(make_stack_psf(pimage))
 
-    def _make_warps(self, *, exps, dims, wcs, dopsf=False):
+    def _make_warps(self, *, exps, bbox, wcs):
         """
         make the warp images
 
@@ -1116,10 +1119,6 @@ class CoaddObsDM(ngmix.Observation):
             config=input_recorder_config, name="dummy",
         )
 
-        if dopsf:
-            coadd_psf_config = CoaddPsfConfig()
-            coadd_psf_config.warpingKernelName = self.interp
-
         # warp stack images to coadd wcs
         warp_config = afw_math.Warper.ConfigClass()
 
@@ -1127,12 +1126,6 @@ class CoaddObsDM(ngmix.Observation):
         # higher order
         warp_config.warpingKernelName = self.interp
         warper = afw_math.Warper.fromConfig(warp_config)
-
-        nx, ny = dims
-        sky_box = geom.Box2I(
-            geom.Point2I(0, 0),
-            geom.Point2I(nx-1, ny-1),
-        )
 
         wexps = []
         weight_list = []
@@ -1156,7 +1149,7 @@ class CoaddObsDM(ngmix.Observation):
                 wcs,
                 exp,
                 maxBBox=exp.getBBox(),
-                destBBox=sky_box,
+                destBBox=bbox,
             )
 
             # Need coadd psf because psf may not be valid over the whole image
@@ -1164,17 +1157,7 @@ class CoaddObsDM(ngmix.Observation):
             good_pixel = np.sum(np.isfinite(wexp.image.array))
             ir_warp.addCalExp(exp, i, good_pixel)
 
-            if dopsf:
-                warp_psf = CoaddPsf(
-                    ir_warp.coaddInputs.ccds,
-                    wcs,
-                    coadd_psf_config.makeControl(),
-                )
-
             wexp.getInfo().setCoaddInputs(ir_warp.coaddInputs)
-
-            if dopsf:
-                wexp.setPsf(warp_psf)
 
             wexps.append(wexp)
 
@@ -1183,8 +1166,6 @@ class CoaddObsDM(ngmix.Observation):
             'weights': weight_list,
             'input_recorder': input_recorder,
         }
-        if dopsf:
-            data['psf_config'] = coadd_psf_config
 
         return data
 

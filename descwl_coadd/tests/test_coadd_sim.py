@@ -60,14 +60,17 @@ def test_coadd_sim_smoke(psf_type):
     rng = np.random.RandomState(8312)
     data = _make_sim(rng, psf_type)
 
-    coadd_dims = data['coadd_dims']
+    extent = data['coadd_bbox'].getDimensions()
+    coadd_dims = (extent.getX(), extent.getY())
+    assert data['coadd_dims'] == coadd_dims
+
     psf_dims = data['psf_dims']
 
     # coadding individual bands as well as over bands
     coadds = MultiBandCoaddsDM(
         data=data['band_data'],
         coadd_wcs=data['coadd_wcs'],
-        coadd_dims=coadd_dims,
+        coadd_bbox=data['coadd_bbox'],
         psf_dims=psf_dims,
     )
 
@@ -88,7 +91,7 @@ def test_coadd_sim_smoke(psf_type):
     coadds = MultiBandCoaddsDM(
         data=data['band_data'],
         coadd_wcs=data['coadd_wcs'],
-        coadd_dims=coadd_dims,
+        coadd_bbox=data['coadd_bbox'],
         psf_dims=psf_dims,
         byband=False,
     )
@@ -105,14 +108,13 @@ def test_coadd_sim_noise():
     rng = np.random.RandomState(32)
     data = _make_sim(rng=rng, psf_type='gauss')
 
-    coadd_dims = data['coadd_dims']
     psf_dims = data['psf_dims']
 
     # coadding individual bands as well as over bands
     coadds = MultiBandCoaddsDM(
         data=data['band_data'],
         coadd_wcs=data['coadd_wcs'],
-        coadd_dims=coadd_dims,
+        coadd_bbox=data['coadd_bbox'],
         psf_dims=psf_dims,
     )
 
