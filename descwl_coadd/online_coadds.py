@@ -7,7 +7,10 @@ TODO
 """
 import lsst.afw.math as afw_math
 import lsst.afw.image as afw_image
-from lsst.pipe.tasks.accumulatorMeanStack import AccumulatorMeanStack
+from lsst.pipe.tasks.accumulatorMeanStack import (
+    AccumulatorMeanStack,
+    stats_ctrl_to_threshold_dict,
+)
 from lsst.pipe.tasks.assembleCoadd import AssembleCoaddTask
 from lsst.daf.butler import DeferredDatasetHandle
 
