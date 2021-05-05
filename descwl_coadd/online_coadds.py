@@ -39,7 +39,9 @@ def make_online_coadd(exps, coadd_wcs, coadd_bbox):
         afw_image.Mask.getPlaneBitMask('EDGE')
     )
 
-    stacker = make_online_stacker(coadd_stats_ctrl, coadd_bbox)
+    stacker = make_online_stacker(
+        coadd_stats_ctrl, coadd_exp.image.array.shape,
+    )
 
     warp_config = afw_math.Warper.ConfigClass()
     warp_config.warpingKernelName = INTERP
@@ -62,16 +64,12 @@ def make_online_coadd(exps, coadd_wcs, coadd_bbox):
 
         stacker.add_masked_image(wexp.image, weight=weight)
 
-        # if isinstance(texp, DeferredDatasetHandle):
-        #     # is this needed?
-        #     del exp
-
     stacker.fill_stacked_masked_image(coadd_exp.image)
 
     return coadd_exp
 
 
-def make_online_stacker(stats_ctrl, coadd_bbox):
+def make_online_stacker(stats_ctrl, coadd_dims):
     """
     make an AccumulatorMeanStack to online coadding
 
@@ -83,18 +81,18 @@ def make_online_stacker(stats_ctrl, coadd_bbox):
         The coadd bbox
     """
 
-    # dims is C/numpy ordering
-    dims = get_dims_from_bbox(coadd_bbox)
-
     mask_map = AssembleCoaddTask.setRejectedMaskMapping(stats_ctrl)
 
+    cefiv = stats_ctrl.getCalcErrorFromInputVariance()
+
+    mask_threshold_dict = stats_ctrl_to_threshold_dict(stats_ctrl)
     return AccumulatorMeanStack(
-        shape=dims,
+        shape=coadd_dims,
         bit_mask_value=stats_ctrl.getAndMask(),
-        mask_threshold_dict={},
+        mask_threshold_dict=mask_threshold_dict,
         mask_map=mask_map,
         no_good_pixels_mask=stats_ctrl.getNoGoodPixelsMask(),
-        calc_error_from_input_variance=True,
+        calc_error_from_input_variance=cefiv,
         compute_n_image=False,
     )
 
@@ -115,11 +113,9 @@ def get_coadd_stats_control(mask):
     """
     stats_ctrl = afw_math.StatisticsControl()
     stats_ctrl.setAndMask(mask)
-    stats_ctrl.setWeighted(True)
+    # not used by the Accumulator
+    # stats_ctrl.setWeighted(True)
     stats_ctrl.setCalcErrorFromInputVariance(True)
-
-    # statsFlags = afw_math.stringToStatisticsProperty(self.config.statistic)
-    # return pipeBase.Struct(ctrl=statsCtrl, flags=statsFlags)
 
     return stats_ctrl
 
