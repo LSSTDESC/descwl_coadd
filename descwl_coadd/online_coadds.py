@@ -4,6 +4,21 @@ TODO
     - psf coadds
     - noise coadds; may want to generate the noise images on the fly
       within this code
+
+So I'll just set andMask for EDGE and all other bits get passed on, and I can
+check on the fly if there are any EDGE in the coadd region
+
+Reject warps with NO_DATA set; for HSC this can be set for chips near the edge
+of the focal plane
+
+check EDGE and NO_DATA are not set in warp mask, eli expects NO_DATA should not be set
+
+Note, warps are the exact size of the coadd, which for standard patches is
+bigger than an image so we can't do any of this yet!
+
+Then check bits for masked fraction
+    bad = np.where(mask & BADSTUFF != 0)
+    maskfrac = bad[0].size / mask.size
 """
 import lsst.afw.math as afw_math
 import lsst.afw.image as afw_image
