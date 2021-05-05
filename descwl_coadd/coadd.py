@@ -27,6 +27,9 @@ from .interp import interpolate_image_and_noise, replace_flag_with_noise
 
 # only place to get this for now
 # from descwl_shear_sims.lsst_bits import BRIGHT
+# TODO figure out how to add this as a mask plane for the exposures
+# we generate in the sim, and add it to the calexp after we read them
+# and find bright stars etc.
 BRIGHT = np.int32(2**30)
 
 EDGE = afw_image.Mask.getPlaneBitMask('EDGE')
