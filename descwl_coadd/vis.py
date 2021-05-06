@@ -13,6 +13,9 @@ def show_image_and_mask(exp):
     display.mtv(exp)
     display.scale('log', 'minmax')
 
+    input('hit a key to show mask')
+    display.mtv(exp.mask)
+
 
 def show_image(image):
     """
