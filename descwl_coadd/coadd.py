@@ -192,7 +192,7 @@ class MultiBandCoadds(object):
                         flags=afw_image.Mask.getPlaneBitMask('EDGE'),
                     )
                     if self.interp_bright:
-                        flag_bright_as_interp(mask=bmask)
+                        flag_bright_as_sat(mask=bmask)
 
                     image, noise = interpolate_image_and_noise(
                         image=image,
@@ -834,7 +834,7 @@ class MultiBandCoaddsDM(object):
                     )
 
                     if self.interp_bright:
-                        flag_bright_as_interp(mask=bmask)
+                        flag_bright_as_sat(mask=bmask)
 
                     iimage, inoise = interpolate_image_and_noise(
                         image=image,
@@ -1486,7 +1486,7 @@ def zero_bits(*, image, noise, mask, flags):
         noise[w] = 0.0
 
 
-def flag_bright_as_interp(*, mask):
+def flag_bright_as_sat(*, mask):
     """
     flag BRIGHT also as SAT so no detections will occur there
 
