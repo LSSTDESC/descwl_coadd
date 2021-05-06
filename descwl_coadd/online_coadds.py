@@ -39,11 +39,12 @@ from lsst.afw.math import FixedKernel
 
 from . import vis
 from .coadd import (
-    zero_bits, flag_bright_as_interp, FLAGS2INTERP, FLAGS_FOR_MASKFRAC,
+    zero_bits, flag_bright_as_sat, FLAGS2INTERP, FLAGS_FOR_MASKFRAC,
     get_masked_frac,
     get_psf_offset,
 )
 from .interp import interpolate_image_and_noise
+from esutil.pbar import PBar
 
 DEFAULT_INTERP = 'lanczos3'
 DEFAULT_LOGLEVEL = 'info'
@@ -87,6 +88,9 @@ def make_online_coadd_obs(
         rng=rng, remove_poisson=remove_poisson,
         loglevel=loglevel,
     )
+    if coadd_exp is None:
+        return None
+
     return CoaddObs(
         coadd_exp=coadd_exp,
         coadd_noise_exp=coadd_noise_exp,
@@ -157,10 +161,16 @@ def make_online_coadd(
     wcss = [coadd_wcs, coadd_wcs, coadd_psf_wcs]
     bboxes = [coadd_bbox, coadd_bbox, coadd_psf_bbox]
 
-    for exp_or_ref in exps:
+    nuse = 0
+    logger.info('warping and adding exposures')
+
+    for exp_or_ref in PBar(exps):
         exp, noise_exp = get_exp_and_noise(
             exp_or_ref=exp_or_ref, rng=rng, remove_poisson=remove_poisson,
         )
+        if exp is None:
+            continue
+
         psf_exp = get_psf_exp(exp, coadd_wcs)
 
         weight = get_exp_weight(exp)
@@ -172,14 +182,16 @@ def make_online_coadd(
             warp_and_add(
                 _stacker, warper, _exp, _wcs, _bbox, weight,
             )
+        nuse += 1
 
-    # stacker.fill_stacked_masked_image(coadd_exp.image)
-    # noise_stacker.fill_stacked_masked_image(coadd_noise_exp.image)
-    # psf_stacker.fill_stacked_masked_image(coadd_psf_exp.image)
-    stacker.fill_stacked_masked_image(coadd_exp)
-    noise_stacker.fill_stacked_masked_image(coadd_noise_exp)
-    psf_stacker.fill_stacked_masked_image(coadd_psf_exp)
+    if nuse == 0:
+        return None, None, None
 
+    stacker.fill_stacked_masked_image(coadd_exp.maskedImage)
+    noise_stacker.fill_stacked_masked_image(coadd_noise_exp.maskedImage)
+    psf_stacker.fill_stacked_masked_image(coadd_psf_exp.maskedImage)
+
+    logger.info('making psf')
     psf = extract_coadd_psf(coadd_psf_exp, logger)
     coadd_exp.setPsf(psf)
     coadd_noise_exp.setPsf(psf)
@@ -266,7 +278,7 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
     var = exp.variance.array
     weight = 1/var
 
-    flag_bright_as_interp(mask=exp.mask.array)
+    flag_bright_as_sat(mask=exp.mask.array)
 
     noise_exp = get_noise_exp(
         exp=exp, rng=rng, remove_poisson=remove_poisson,
@@ -287,8 +299,11 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
         bmask=exp.mask.array,
         bad_flags=FLAGS2INTERP,
     )
-    exp.image.array = iimage
-    noise_exp.image.array = inoise
+    if iimage is None:
+        return None, None
+
+    exp.image.array[:, :] = iimage
+    noise_exp.image.array[:, :] = inoise
 
     return exp, noise_exp
 
@@ -597,17 +612,19 @@ class CoaddObs(ngmix.Observation):
         """
         self.log.info('showing coadd in ds9')
         vis.show_image_and_mask(self.coadd_exp)
+
+        vis.show_image(self.coadd_psf_exp.image.array, title='psf')
         # this will block
-        vis.show_images(
-            [
-                self.image,
-                self.coadd_exp.mask.array,
-                self.noise,
-                self.coadd_noise_exp.mask.array,
-                self.coadd_psf_exp.image.array,
-                # self.weight,
-            ],
-        )
+        # vis.show_images(
+        #     [
+        #         self.image,
+        #         self.coadd_exp.mask.array,
+        #         self.noise,
+        #         self.coadd_noise_exp.mask.array,
+        #         self.coadd_psf_exp.image.array,
+        #         # self.weight,
+        #     ],
+        # )
 
     def _get_jac(self, *, cenx, ceny):
         """
@@ -708,9 +725,12 @@ class CoaddObs(ngmix.Observation):
             psf=psf_obs,
             store_pixels=False,
         )
+
         self.meta['mask_frac'] = get_masked_frac(
             mask=self.ormask,
             flags=FLAGS_FOR_MASKFRAC,
+            # use this once we get fixed because coadd bits can get shifted
+            # flags=afw_image.Mask.getPlaneBitMask('BRIGHT')
         )
 
 
