@@ -38,6 +38,12 @@ from lsst.meas.algorithms import KernelPsf
 from lsst.afw.math import FixedKernel
 
 from . import vis
+from .coadd import (
+    zero_bits, flag_bright_as_interp, FLAGS2INTERP, FLAGS_FOR_MASKFRAC,
+    get_masked_frac,
+    get_psf_offset,
+)
+from .interp import interpolate_image_and_noise
 
 DEFAULT_INTERP = 'lanczos3'
 DEFAULT_LOGLEVEL = 'info'
@@ -130,12 +136,12 @@ def make_online_coadd(
     coadd_psf_wcs = get_coadd_psf_wcs(coadd_wcs, psf_dims)
 
     # separately stack data, noise, and psf
-    coadd_exp = afw_image.ExposureF(coadd_bbox, coadd_wcs)
-    coadd_noise_exp = afw_image.ExposureF(coadd_bbox, coadd_wcs)
-    coadd_psf_exp = afw_image.ExposureF(coadd_psf_bbox, coadd_psf_wcs)
+    coadd_exp = make_coadd_exposure(coadd_bbox, coadd_wcs)
+    coadd_noise_exp = make_coadd_exposure(coadd_bbox, coadd_wcs)
+    coadd_psf_exp = make_coadd_exposure(coadd_psf_bbox, coadd_psf_wcs)
 
     mask = afw_image.Mask.getPlaneBitMask('EDGE')
-    coadd_dims = coadd_exp.image.array.shape,
+    coadd_dims = coadd_exp.image.array.shape
 
     stacker = make_online_stacker(mask=mask, coadd_dims=coadd_dims)
     noise_stacker = make_online_stacker(mask=mask, coadd_dims=coadd_dims)
@@ -167,15 +173,41 @@ def make_online_coadd(
                 _stacker, warper, _exp, _wcs, _bbox, weight,
             )
 
-    stacker.fill_stacked_masked_image(coadd_exp.image)
-    noise_stacker.fill_stacked_masked_image(coadd_noise_exp.image)
-    psf_stacker.fill_stacked_masked_image(coadd_psf_exp.image)
+    # stacker.fill_stacked_masked_image(coadd_exp.image)
+    # noise_stacker.fill_stacked_masked_image(coadd_noise_exp.image)
+    # psf_stacker.fill_stacked_masked_image(coadd_psf_exp.image)
+    stacker.fill_stacked_masked_image(coadd_exp)
+    noise_stacker.fill_stacked_masked_image(coadd_noise_exp)
+    psf_stacker.fill_stacked_masked_image(coadd_psf_exp)
 
     psf = extract_coadd_psf(coadd_psf_exp, logger)
     coadd_exp.setPsf(psf)
     coadd_noise_exp.setPsf(psf)
 
-    return coadd_exp, coadd_noise_exp
+    return coadd_exp, coadd_noise_exp, coadd_psf_exp
+
+
+def make_coadd_exposure(coadd_bbox, coadd_wcs):
+    """
+    make a coadd exposure with extra mask planes for
+    rejected, clipped, sensor_edge
+
+    Parameters
+    ----------
+    coadd_bbox: geom.Box2I
+        the bbox for the coadd exposure
+    coads_wcs: DM wcs
+        The wcs for the coadd exposure
+
+    Returns
+    -------
+    ExpsureF
+    """
+    coadd_exp = afw_image.ExposureF(coadd_bbox, coadd_wcs)
+    coadd_exp.mask.addMaskPlane("REJECTED")
+    coadd_exp.mask.addMaskPlane("CLIPPED")
+    coadd_exp.mask.addMaskPlane("SENSOR_EDGE")
+    return coadd_exp
 
 
 def extract_coadd_psf(coadd_psf_exp, logger):
@@ -215,6 +247,8 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
     get the exposure (possibly from a deferred handle) and create
     a corresponding noise exposure
 
+    TODO move interpolating BRIGHT into metadetect or mdet-lsst-sim
+
     Parameters
     ----------
     exp_or_ref: afw_image.ExposureF or DeferredDatasetHandle
@@ -227,11 +261,35 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
     if isinstance(exp_or_ref, DeferredDatasetHandle):
         exp = exp_or_ref.get()
     else:
-        exp = exp
+        exp = exp_or_ref
+
+    var = exp.variance.array
+    weight = 1/var
+
+    flag_bright_as_interp(mask=exp.mask.array)
 
     noise_exp = get_noise_exp(
         exp=exp, rng=rng, remove_poisson=remove_poisson,
     )
+
+    # noise and image will have zeros in EDGE
+    zero_bits(
+        image=exp.image.array,
+        noise=noise_exp.image.array,
+        mask=exp.mask.array,
+        flags=afw_image.Mask.getPlaneBitMask('EDGE'),
+    )
+
+    iimage, inoise = interpolate_image_and_noise(
+        image=exp.image.array,
+        noise=noise_exp.image.array,
+        weight=weight,
+        bmask=exp.mask.array,
+        bad_flags=FLAGS2INTERP,
+    )
+    exp.image.array = iimage
+    noise_exp.image.array = inoise
+
     return exp, noise_exp
 
 
@@ -261,7 +319,7 @@ def warp_and_add(stacker, warper, exp, coadd_wcs, coadd_bbox, weight):
         maxBBox=exp.getBBox(),
         destBBox=coadd_bbox,
     )
-    stacker.add_masked_image(wexp.image, weight=weight)
+    stacker.add_masked_image(wexp, weight=weight)
 
 
 def make_online_stacker(mask, coadd_dims):
@@ -315,6 +373,19 @@ def get_coadd_stats_control(mask):
     # not used by the Accumulator
     # stats_ctrl.setWeighted(True)
     stats_ctrl.setCalcErrorFromInputVariance(True)
+
+    # TODO when we make the BRIGHT plane, we will have BRIGHT at 0.0 here but
+    # not so for others (e.g. SAT should be 0.1 or whatever)
+    # TODO make this part of a configuration
+
+    # we want to always propagate BRIGHT, which is currently translated to
+    # SAT
+    mask_prop_thresh = {
+        'SAT': 0.0,
+    }
+    for plane, threshold in mask_prop_thresh.items():
+        bit = afw_image.Mask.getMaskPlane(plane)
+        stats_ctrl.setMaskPropagationThreshold(bit, threshold)
 
     return stats_ctrl
 
@@ -637,22 +708,10 @@ class CoaddObs(ngmix.Observation):
             psf=psf_obs,
             store_pixels=False,
         )
-
-
-def get_psf_offset(pos):
-    """
-    the offset where the psf ends up landing with computeImage
-    I don't know if this actually works or not for real psfs
-
-    Parameters
-    ----------
-    pos: geom.Point2D
-        The position requested for the reconstruction
-    """
-    return geom.Point2D(
-        x=pos.x - int(pos.x + 0.5),
-        y=pos.y - int(pos.y + 0.5),
-    )
+        self.meta['mask_frac'] = get_masked_frac(
+            mask=self.ormask,
+            flags=FLAGS_FOR_MASKFRAC,
+        )
 
 
 def get_coadd_psf_wcs(coadd_wcs, psf_dims):
@@ -689,3 +748,4 @@ def make_logger(name, loglevel):
     """
     logger = lsst.log.getLogger(name)
     logger.setLevel(getattr(lsst.log, loglevel.upper()))
+    return logger
