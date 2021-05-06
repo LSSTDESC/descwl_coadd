@@ -32,15 +32,21 @@ from .interp import interpolate_image_and_noise, replace_flag_with_noise
 # and find bright stars etc.
 BRIGHT = np.int32(2**30)
 
-EDGE = afw_image.Mask.getPlaneBitMask('EDGE')
-
-# we interpolate the saturated pixels but not full star
-# or bleed masks
+# we interpolate the saturated pixels, and note the
+# currently BRIGHT is mapped onto SAT until we add
+# the BRIGHT plane
 FLAGS2INTERP = (
     afw_image.Mask.getPlaneBitMask('BAD') |
     afw_image.Mask.getPlaneBitMask('CR') |
     afw_image.Mask.getPlaneBitMask('SAT')
 )
+
+# currently same as FLAGS2INTERP but
+# TODO instead keep masked frac (averaged across exposures)
+# rather than just looking at overall masked frac based
+# on or mask.  BRIGHT (currently setting to SAT) will
+# be in all the images equally
+FLAGS_FOR_MASKFRAC = BRIGHT
 
 
 class MultiBandCoadds(object):
@@ -181,7 +187,10 @@ class MultiBandCoadds(object):
                     )
 
                 if not self.use_stack_interp:
-                    zero_bits(image=image, noise=noise, mask=bmask, flags=EDGE)
+                    zero_bits(
+                        image=image, noise=noise, mask=bmask,
+                        flags=afw_image.Mask.getPlaneBitMask('EDGE'),
+                    )
                     if self.interp_bright:
                         flag_bright_as_interp(mask=bmask)
 
@@ -321,7 +330,7 @@ class MultiBandCoadds(object):
                 )
                 self.coadds[band].meta['mask_frac'] = get_masked_frac(
                     mask=self.coadds[band].ormask,
-                    flags=FLAGS2INTERP,
+                    flags=FLAGS_FOR_MASKFRAC,
                 )
 
         self.coadds['all'] = CoaddObs(
@@ -335,7 +344,7 @@ class MultiBandCoadds(object):
         )
         self.coadds['all'].meta['mask_frac'] = get_masked_frac(
             mask=self.coadds['all'].ormask,
-            flags=FLAGS2INTERP,
+            flags=FLAGS_FOR_MASKFRAC,
         )
         if self._show:
             self.coadds['all'].show()
@@ -819,7 +828,10 @@ class MultiBandCoaddsDM(object):
                 weight = 1/var
 
                 if not self.use_stack_interp:
-                    zero_bits(image=image, noise=noise, mask=bmask, flags=EDGE)
+                    zero_bits(
+                        image=image, noise=noise, mask=bmask,
+                        flags=afw_image.Mask.getPlaneBitMask('EDGE'),
+                    )
 
                     if self.interp_bright:
                         flag_bright_as_interp(mask=bmask)
@@ -943,7 +955,7 @@ class MultiBandCoaddsDM(object):
                 )
                 self.coadds[band].meta['mask_frac'] = get_masked_frac(
                     mask=self.coadds[band].ormask,
-                    flags=FLAGS2INTERP,
+                    flags=FLAGS_FOR_MASKFRAC,
                 )
 
         self.coadds['all'] = CoaddObsDM(
@@ -957,7 +969,7 @@ class MultiBandCoaddsDM(object):
         )
         self.coadds['all'].meta['mask_frac'] = get_masked_frac(
             mask=self.coadds['all'].ormask,
-            flags=FLAGS2INTERP,
+            flags=FLAGS_FOR_MASKFRAC,
         )
         if self._show:
             self.coadds['all'].show()
