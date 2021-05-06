@@ -9,6 +9,11 @@ from scipy.interpolate import CloughTocher2DInterpolator
 import numba
 from numba import njit
 
+# max allowed mask fraction for single epoch image going into coadd
+# TODO make this configurable
+# TODO do we even need this?  Should be checking at the warp level
+MAX_BADFRAC = 0.9
+
 
 @njit
 def _get_nearby_good_pixels(image, bad_msk, nbad, buff=4):
@@ -111,7 +116,7 @@ def _grid_interp(*, image, bad_msk):
     nbad = bad_msk.sum()
     bm_frac = nbad/npix
 
-    if bm_frac < 0.90:
+    if bm_frac < MAX_BADFRAC:
 
         bad_pix, good_pix, good_im, good_ind = \
             _get_nearby_good_pixels(image, bad_msk, nbad)
