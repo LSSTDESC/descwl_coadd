@@ -13,18 +13,29 @@ def show_image_and_mask(exp):
     display.mtv(exp)
     display.scale('log', 'minmax')
 
+    input('hit a key to show mask')
+    display.mtv(exp.mask)
 
-def show_image(image):
+    input('hit a key to see psf')
+
+
+def show_image(image, title=None):
     """
     show an image
     """
-    import matplotlib.pyplot as plt
-    plt.imshow(
+    import matplotlib.pyplot as mplt
+    fig, ax = mplt.subplots()
+
+    ax.imshow(
         image,
         interpolation='nearest',
         cmap='gray',
     )
-    plt.show()
+    if title is not None:
+        ax.set_title(title)
+
+    fig.show()
+    input('hit a key')
 
 
 def show_2images(im1, im2, title=None):
