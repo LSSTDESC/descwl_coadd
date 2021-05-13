@@ -45,7 +45,6 @@ jobs:
 
                 pip install --no-deps git+https://github.com/LSSTDESC/descwl-shear-sims.git
 
-                mkdir /tmp
                 git clone --branch u/erykoff/onlinecoadd https://github.com/lsst/pipe_tasks.git /tmp/pipe_tasks
                 pushd /tmp/pipe_tasks
                 # this might partly fail but that's ok
