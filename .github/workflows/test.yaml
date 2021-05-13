@@ -21,7 +21,7 @@ jobs:
                   pip install --no-deps git+https://github.com/LSSTDESC/descwl-shear-sims.git
 
                   mkdir /tmp
-                  git clone --branch u/erykoff/onlinecoadd git@github.com:lsst/pipe_tasks.git /tmp/pipe_tasks
+                  git clone --branch u/erykoff/onlinecoadd https://github.com/lsst/pipe_tasks.git /tmp/pipe_tasks
 
             - name: Checkout code
               uses: actions/checkout@v2
