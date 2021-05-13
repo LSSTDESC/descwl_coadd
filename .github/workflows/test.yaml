@@ -22,6 +22,10 @@ jobs:
 
                   mkdir /tmp
                   git clone --branch u/erykoff/onlinecoadd https://github.com/lsst/pipe_tasks.git /tmp/pipe_tasks
+                  pushd /tmp/pipe_tasks
+                  # this might partly fail but that's ok
+                  scons
+                  popd
 
             - name: Checkout code
               uses: actions/checkout@v2
