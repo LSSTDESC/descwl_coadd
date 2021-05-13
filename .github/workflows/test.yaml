@@ -46,6 +46,7 @@ jobs:
                 pip install --no-deps git+https://github.com/LSSTDESC/descwl-shear-sims.git
 
                 git clone --branch u/erykoff/onlinecoadd https://github.com/lsst/pipe_tasks.git /tmp/pipe_tasks
+
                 pushd /tmp/pipe_tasks
                 # this might partly fail but that's ok
                 scons
@@ -56,7 +57,6 @@ jobs:
           - name: Lint with flake8
             shell: bash -l {0}
             run: |
-                . /usr/local/share/stackvana-activate.sh
                 flake8 descwl_coadd
 
           - name: Run pytest
