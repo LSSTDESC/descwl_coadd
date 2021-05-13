@@ -725,7 +725,8 @@ class CoaddObs(ngmix.Observation):
             psf=psf_obs,
             store_pixels=False,
         )
-
+        flags_for_maskfrac = self.coadd_exp.mask.getPlaneBitMask('BRIGHT')
+        print('flags_for_maskfrac:', flags_for_maskfrac)
         self.meta['mask_frac'] = get_masked_frac(
             mask=self.ormask,
             flags=FLAGS_FOR_MASKFRAC,

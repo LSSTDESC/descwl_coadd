@@ -25,7 +25,7 @@ import ngmix
 from . import vis
 from .interp import interpolate_image_and_noise, replace_flag_with_noise
 
-# only place to get this for now
+# remove when we remove SEObs based coadds
 # from descwl_shear_sims.lsst_bits import BRIGHT
 # TODO figure out how to add this as a mask plane for the exposures
 # we generate in the sim, and add it to the calexp after we read them
@@ -41,7 +41,7 @@ FLAGS2INTERP = (
     afw_image.Mask.getPlaneBitMask('SAT')
 )
 
-# currently same as FLAGS2INTERP but
+# currently just BRIGHT, but
 # TODO instead keep masked frac (averaged across exposures)
 # rather than just looking at overall masked frac based
 # on or mask.  BRIGHT (currently setting to SAT) will
@@ -834,7 +834,7 @@ class MultiBandCoaddsDM(object):
                     )
 
                     if self.interp_bright:
-                        flag_bright_as_sat(mask=bmask)
+                        flag_bright_as_sat_dm(mask=bmask)
 
                     iimage, inoise = interpolate_image_and_noise(
                         image=image,
@@ -930,6 +930,15 @@ class MultiBandCoaddsDM(object):
         """
         make all coadds
         """
+
+        # currently just BRIGHT but
+        # TODO instead keep masked frac (averaged across exposures)
+        # rather than just looking at overall masked frac based
+        # on or mask.  BRIGHT (currently setting to SAT) will
+        # be in all the images equally
+
+        flags_for_maskfrac = self.exps[0].mask.getPlaneBitMask('BRIGHT')
+
         self.log.info('making coadds')
 
         # dict are now ordered since python 3.6
@@ -955,7 +964,7 @@ class MultiBandCoaddsDM(object):
                 )
                 self.coadds[band].meta['mask_frac'] = get_masked_frac(
                     mask=self.coadds[band].ormask,
-                    flags=FLAGS_FOR_MASKFRAC,
+                    flags=flags_for_maskfrac,
                 )
 
         self.coadds['all'] = CoaddObsDM(
@@ -969,7 +978,7 @@ class MultiBandCoaddsDM(object):
         )
         self.coadds['all'].meta['mask_frac'] = get_masked_frac(
             mask=self.coadds['all'].ormask,
-            flags=FLAGS_FOR_MASKFRAC,
+            flags=flags_for_maskfrac,
         )
         if self._show:
             self.coadds['all'].show()
@@ -1498,6 +1507,22 @@ def flag_bright_as_sat(*, mask):
     if w[0].size > 0:
         satval = afw_image.Mask.getPlaneBitMask('SAT')
         mask[w] |= satval
+
+
+def flag_bright_as_sat_dm(*, mask):
+    """
+    flag BRIGHT also as SAT so no detections will occur there
+
+    we currently pull the bitmask value from the descwl_shear_sims
+    package
+    """
+
+    brightflag = mask.getPlaneBitMask('BRIGHT')
+    satflag = mask.getPlaneBitMask('SAT')
+
+    w = np.where((mask & brightflag) != 0)
+    if w[0].size > 0:
+        mask[w] |= satflag
 
 
 @njit
