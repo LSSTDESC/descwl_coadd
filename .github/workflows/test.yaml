@@ -1,0 +1,36 @@
+name: mdet-lsst-sims
+
+on:
+    push:
+        branches: [ master ]
+    pull_request:
+        branches: [ master ]
+
+jobs:
+    build:
+        runs-on: 'ubuntu-latest'
+        container: beckermr/stackvana
+
+        steps:
+
+            - name: Install special dependencies with conda and pip
+              shell: bash -l {0}
+              run: |
+                  . /usr/local/share/stackvana-activate.sh
+                  conda install -q -y ngmix
+                  pip install --no-deps git+https://github.com/LSSTDESC/descwl-shear-sims.git
+
+            - name: Checkout code
+              uses: actions/checkout@v2
+
+            - name: Lint with flake8
+              shell: bash -l {0}
+              run: |
+                  . /usr/local/share/stackvana-activate.sh
+                  flake8 descwl_coadd
+
+            - name: Run pytest
+              shell: bash -l {0}
+              run: |
+                  . /usr/local/share/stackvana-activate.sh
+                  pytest -vv descwl_coadd
