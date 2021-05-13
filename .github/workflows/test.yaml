@@ -1,4 +1,4 @@
-name: mdet-lsst-sims
+name: tests
 
 on:
     push:
