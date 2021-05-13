@@ -20,12 +20,7 @@ jobs:
                   conda install -q -y ngmix
                   pip install --no-deps git+https://github.com/LSSTDESC/descwl-shear-sims.git
 
-                  pushd ~
-                  mkdir git
-                  pushd git
-                  git clone --branch u/erykoff/onlinecoadd git@github.com:lsst/pipe_tasks.git
-                  popd
-                  popd
+                  git clone --branch u/erykoff/onlinecoadd git@github.com:lsst/pipe_tasks.git /tmp/pipe_tasks
 
             - name: Checkout code
               uses: actions/checkout@v2
@@ -40,5 +35,5 @@ jobs:
               shell: bash -l {0}
               run: |
                   . /usr/local/share/stackvana-activate.sh
-                  setup -j -r ~/git/pipe_tasks
+                  setup -j -r /tmp/pipe_tasks
                   pytest -vv descwl_coadd
