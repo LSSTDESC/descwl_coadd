@@ -56,7 +56,7 @@ def _make_sim(rng, psf_type, epochs_per_band=3):
     )
 
 
-def test_coadd_sim_psgauss_smoke(psf_type):
+def test_coadd_sim_psgauss_smoke():
     psf_type = 'gauss'
     rng = np.random.RandomState(8312)
     data = _make_sim(rng, psf_type)
