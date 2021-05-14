@@ -32,7 +32,7 @@ jobs:
                 conda install -q mamba
 
                 mamba install -q stackvana=0
-
+                
                 mamba install -q \
                   flake8 \
                   pytest \
@@ -46,6 +46,10 @@ jobs:
                 pip install --no-deps git+https://github.com/LSSTDESC/descwl-shear-sims.git
 
                 git clone --branch u/erykoff/onlinecoadd https://github.com/lsst/pipe_tasks.git /tmp/pipe_tasks
+
+          - name: try another step
+            shell: bash -l {0}
+            run: |
                 env
                 
                 setup -j -r /tmp/pipe_tasks
