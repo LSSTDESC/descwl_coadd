@@ -1,3 +1,4 @@
+import os
 import pytest
 import numpy as np
 
@@ -55,8 +56,57 @@ def _make_sim(rng, psf_type, epochs_per_band=3):
     )
 
 
-@pytest.mark.parametrize('psf_type', ['gauss', 'ps'])
-def test_coadd_sim_smoke(psf_type):
+def test_coadd_sim_psgauss_smoke(psf_type):
+    psf_type = 'gauss'
+    rng = np.random.RandomState(8312)
+    data = _make_sim(rng, psf_type)
+
+    extent = data['coadd_bbox'].getDimensions()
+    coadd_dims = (extent.getX(), extent.getY())
+    assert data['coadd_dims'] == coadd_dims
+
+    psf_dims = data['psf_dims']
+
+    # coadding individual bands as well as over bands
+    coadds = MultiBandCoaddsDM(
+        data=data['band_data'],
+        coadd_wcs=data['coadd_wcs'],
+        coadd_bbox=data['coadd_bbox'],
+        psf_dims=psf_dims,
+    )
+
+    coadd = coadds.get_coadd()
+    assert coadd.coadd_exp.image.array.shape == coadd_dims
+    assert coadd.image.shape == coadd_dims
+    assert coadd.noise.shape == coadd_dims
+    assert coadd.psf.image.shape == psf_dims
+
+    for band in coadds.bands:
+        bcoadd = coadds.get_coadd(band=band)
+        assert bcoadd.coadd_exp.image.array.shape == coadd_dims
+        assert bcoadd.image.shape == coadd_dims
+        assert bcoadd.noise.shape == coadd_dims
+        assert bcoadd.psf.image.shape == psf_dims
+
+    # not coadding individual bands
+    coadds = MultiBandCoaddsDM(
+        data=data['band_data'],
+        coadd_wcs=data['coadd_wcs'],
+        coadd_bbox=data['coadd_bbox'],
+        psf_dims=psf_dims,
+        byband=False,
+    )
+
+    for band in coadds.bands:
+        assert band not in coadds.coadds
+
+
+@pytest.mark.skipif(
+    "CATSIM_DIR" not in os.environ,
+    reason='simulation input data is not present'
+)
+def test_coadd_sim_pspsf_smoke():
+    psf_type = 'ps'
     rng = np.random.RandomState(8312)
     data = _make_sim(rng, psf_type)
 
