@@ -172,6 +172,7 @@ def make_online_coadd(
             continue
 
         psf_exp = get_psf_exp(exp, coadd_wcs, var)
+        assert psf_exp.variance.array[0, 0] == noise_exp.variance.array[0, 0]
 
         weight = get_exp_weight(exp)
 
@@ -328,12 +329,19 @@ def warp_and_add(stacker, warper, exp, coadd_wcs, coadd_bbox, weight):
     weight: float
         Weight for this image in the stack
     """
+    v = exp.variance.array
+    # print('-'*70)
+    # print('wcs:', exp.getWcs())
+    # print('exp var:', v.min(), np.median(v), v.max())
     wexp = warper.warpExposure(
         coadd_wcs,
         exp,
         maxBBox=exp.getBBox(),
         destBBox=coadd_bbox,
     )
+    v = wexp.variance.array
+    # print('warp wcs:', exp.getWcs())
+    print(v.shape, 'warp var:', v.min(), np.median(v), v.max())
     stacker.add_masked_image(wexp, weight=weight)
 
 
@@ -533,15 +541,18 @@ def get_psf_exp(exp, coadd_wcs, var):
     coadd_sky_orig = coadd_wcs.getSkyOrigin()
     wcs = exp.getWcs()
     pos = wcs.skyToPixel(coadd_sky_orig)
+    print('sky pos in pixels:', pos)
 
     psf_obj = exp.getPsf()
     psf_image = psf_obj.computeImage(pos).array
     psf_offset = get_psf_offset(pos)
+    # print('psf offset:', psf_offset)
 
     cy, cx = (np.array(psf_image.shape)-1)/2
     cy += psf_offset.y
     cx += psf_offset.x
     psf_crpix = geom.Point2D(x=cx, y=cy)
+    print('psf crpix:', psf_crpix)
 
     cd_matrix = wcs.getCdMatrix(pos)
 
@@ -550,6 +561,10 @@ def get_psf_exp(exp, coadd_wcs, var):
         crval=coadd_sky_orig,
         cdMatrix=cd_matrix,
     )
+
+    # psf_stack_wcs = wcs.copyAtShiftedPixelOrigin(
+    #     lsst.geom.Extent2D(x=psf_offset.x, y=psf_offset.y)
+    # )
     # TODO: deal with zeros
 
     pny, pnx = psf_image.shape
@@ -720,8 +735,8 @@ class CoaddObs(ngmix.Observation):
             psf=psf_obs,
             store_pixels=False,
         )
-        flags_for_maskfrac = self.coadd_exp.mask.getPlaneBitMask('BRIGHT')
-        print('flags_for_maskfrac:', flags_for_maskfrac)
+        # flags_for_maskfrac = self.coadd_exp.mask.getPlaneBitMask('BRIGHT')
+        # print('flags_for_maskfrac:', flags_for_maskfrac)
         self.meta['mask_frac'] = get_masked_frac(
             mask=self.ormask,
             flags=FLAGS_FOR_MASKFRAC,
