@@ -1,100 +1,54 @@
 import numpy as np
 
-from descwl_shear_sims.simple_sim import SimpleSim
-from ..coadd import (
-    MultiBandCoadds,
-    make_stack_psf,
-    repair_exp,
-)
-
-
-def get_cosmic_flag():
-    import lsst.afw.image as afw_image
-    return 2**afw_image.Mask.getMaskPlane('CR')
+from descwl_shear_sims.sim import make_sim
+from descwl_shear_sims.galaxies import make_galaxy_catalog
+from descwl_shear_sims.psfs import make_fixed_psf
+from ..online_coadds import make_online_coadd_obs
 
 
 def test_cosmics():
 
-    cosmic_flag = get_cosmic_flag()
+    rng = np.random.RandomState(32)
 
-    rng = np.random.RandomState(8312)
-    sim = SimpleSim(
+    coadd_dim = 101
+    buff = 5
+    psf_dim = 51
+    galaxy_catalog = make_galaxy_catalog(
         rng=rng,
-        epochs_per_band=2,
+        gal_type="exp",
+        coadd_dim=coadd_dim,
+        buff=buff,
+        layout="grid",
+    )
+    psf = make_fixed_psf(psf_type='gauss')
+
+    data = make_sim(
+        rng=rng,
+        galaxy_catalog=galaxy_catalog,
+        coadd_dim=coadd_dim,
+        psf_dim=psf_dim,
+        g1=0.02,
+        g2=0.00,
+        psf=psf,
+        epochs_per_band=10,  # so we get a CR
         cosmic_rays=True,
     )
-    data = sim.gen_sim()
-
-    # coadding individual bands as well as over bands
-    coadd_dims = (sim.coadd_dim, )*2
-
-    psf_dim = int(sim.psf_dim/np.sqrt(3))
-    if psf_dim % 2 == 0:
-        psf_dim -= 1
-    psf_dims = (psf_dim,)*2
-
-    coadds = MultiBandCoadds(
-        data=data,
-        coadd_wcs=sim.coadd_wcs,
-        coadd_dims=coadd_dims,
-        psf_dims=psf_dims,
+    coadd = make_online_coadd_obs(
+        exps=data['band_data']['i'],
+        coadd_wcs=data['coadd_wcs'],
+        coadd_bbox=data['coadd_bbox'],
+        psf_dims=data['psf_dims'],
+        rng=rng,
+        remove_poisson=False,  # no object poisson noise in sims
     )
 
-    for exp, nexp in zip(coadds.exps, coadds.noise_exps):
-        bmask = exp.mask.array
-        noise_bmask = nexp.mask.array
+    cosmic_flag = coadd.coadd_exp.mask.getPlaneBitMask('CR')
 
-        w = np.where((bmask & cosmic_flag) != 0)
-        assert w[0].size != 0
-
-        w = np.where((noise_bmask & cosmic_flag) != 0)
-        assert w[0].size != 0
-
-
-def test_noise_cosmics():
-    """
-    very simple version not using the main sim
-    """
-
-    import lsst.afw.image as afw_image
-    import galsim
-
-    psf_image = galsim.Gaussian(fwhm=0.9).drawImage(
-        scale=0.263,
-    ).array
-
-    noise = 180.0
-    sx, sy = 500, 500
-
-    rng = np.random.RandomState(9763)
-
-    stack_image = afw_image.MaskedImageF(sx, sy)
-    stack_image.image.array[:, :] = rng.normal(
-        scale=noise,
-        size=(sy, sx),
-    )
-
-    stack_image.variance.array[:, :] = noise**2
-    stack_image.mask.array[:, :] = 0
-    exp = afw_image.ExposureF(stack_image)
-
-    exp.setPsf(make_stack_psf(psf_image))
-
-    repair_exp(exp)
-
-    cosmic_flag = get_cosmic_flag()
-
-    bmask = exp.mask.array
+    bmask = coadd.coadd_exp.mask.array
+    noise_bmask = coadd.coadd_noise_exp.mask.array
 
     w = np.where((bmask & cosmic_flag) != 0)
+    assert w[0].size != 0
 
-    print('found:', w[0].size, 'cosmics in noise')
-    if w[0].size > 0:
-        # import fitsio
-        # fitsio.write('/tmp/tmp.fits', nexp.image.array, clobber=True)
-        print('indices:', w)
-        print('values:', exp.image.array[w])
-
-    # for now don't require 0, until we figure out why its finding
-    # cosmics in the noise
-    assert w[0].size < 5
+    w = np.where((noise_bmask & cosmic_flag) != 0)
+    assert w[0].size != 0
