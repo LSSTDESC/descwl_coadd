@@ -165,13 +165,13 @@ def make_online_coadd(
     logger.info('warping and adding exposures')
 
     for exp_or_ref in PBar(exps):
-        exp, noise_exp = get_exp_and_noise(
+        exp, noise_exp, var = get_exp_and_noise(
             exp_or_ref=exp_or_ref, rng=rng, remove_poisson=remove_poisson,
         )
         if exp is None:
             continue
 
-        psf_exp = get_psf_exp(exp, coadd_wcs)
+        psf_exp = get_psf_exp(exp, coadd_wcs, var)
 
         weight = get_exp_weight(exp)
 
@@ -280,7 +280,7 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
 
     flag_bright_as_sat(mask=exp.mask.array)
 
-    noise_exp = get_noise_exp(
+    noise_exp, var = get_noise_exp(
         exp=exp, rng=rng, remove_poisson=remove_poisson,
     )
 
@@ -305,7 +305,7 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
     exp.image.array[:, :] = iimage
     noise_exp.image.array[:, :] = inoise
 
-    return exp, noise_exp
+    return exp, noise_exp, var
 
 
 def warp_and_add(stacker, warper, exp, coadd_wcs, coadd_bbox, weight):
@@ -488,18 +488,18 @@ def get_noise_exp(exp, rng, remove_poisson):
 
         corrected_var = variance[use] - signal[use] / mean_gain
 
-        medvar = np.median(corrected_var)
+        var = np.median(corrected_var)
     else:
-        medvar = np.median(variance[use])
+        var = np.median(variance[use])
 
-    noise_image = rng.normal(scale=np.sqrt(medvar), size=signal.shape)
+    noise_image = rng.normal(scale=np.sqrt(var), size=signal.shape)
 
     ny, nx = signal.shape
     nmimage = afw_image.MaskedImageF(width=nx, height=ny)
     assert nmimage.image.array.shape == (ny, nx)
 
     nmimage.image.array[:, :] = noise_image
-    nmimage.variance.array[:, :] = medvar
+    nmimage.variance.array[:, :] = var
     nmimage.mask.array[:, :] = exp.mask.array[:, :]
 
     noise_exp = afw_image.ExposureF(nmimage)
@@ -508,10 +508,10 @@ def get_noise_exp(exp, rng, remove_poisson):
     noise_exp.setFilterLabel(exp.getFilterLabel())
     noise_exp.setDetector(exp.getDetector())
 
-    return noise_exp
+    return noise_exp, var
 
 
-def get_psf_exp(exp, coadd_wcs):
+def get_psf_exp(exp, coadd_wcs, var):
     """
     create a psf exposure to be coadded, rendered at the
     position in the exposure corresponding to the center of the
@@ -523,6 +523,8 @@ def get_psf_exp(exp, coadd_wcs):
         The exposure
     coadd_wcs: DM wcs
         The wcs for the coadd
+    var: float
+        The variance to set in the psf variance map
 
     Returns
     -------
@@ -550,17 +552,10 @@ def get_psf_exp(exp, coadd_wcs):
     )
     # TODO: deal with zeros
 
-    # an exp for the PSF
-    # we need to put a var here that is consistent with the
-    # main image to get a consistent coadd.  I'm not sure
-    # what the best choice is, using median for now TODO
-
-    var = exp.variance.array
-
     pny, pnx = psf_image.shape
     pmasked_image = afw_image.MaskedImageF(pny, pnx)
     pmasked_image.image.array[:, :] = psf_image
-    pmasked_image.variance.array[:, :] = np.median(var)
+    pmasked_image.variance.array[:, :] = var
     pmasked_image.mask.array[:, :] = 0
 
     psf_exp = afw_image.ExposureF(pmasked_image)
