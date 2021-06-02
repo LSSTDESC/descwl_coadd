@@ -6,7 +6,7 @@ from descwl_shear_sims.sim import make_sim, get_se_dim
 from descwl_shear_sims.psfs import make_fixed_psf, make_ps_psf
 from descwl_shear_sims.stars import StarCatalog
 
-from ..online_coadds import make_online_coadd_obs
+from ..coadd import make_coadd_obs
 from descwl_shear_sims.galaxies import make_galaxy_catalog
 
 
@@ -65,7 +65,7 @@ def _make_sim(
 
 @pytest.mark.parametrize('dither', [False, True])
 @pytest.mark.parametrize('rotate', [False, True])
-def test_online_coadds_smoke(dither, rotate):
+def test_coadds_smoke(dither, rotate):
     rng = np.random.RandomState(55)
 
     coadd_dim = 101
@@ -84,7 +84,7 @@ def test_online_coadds_smoke(dither, rotate):
         assert band in bdata
         exps = bdata[band]
 
-        coadd = make_online_coadd_obs(
+        coadd = make_coadd_obs(
             exps=exps,
             coadd_wcs=sim_data['coadd_wcs'],
             coadd_bbox=sim_data['coadd_bbox'],
@@ -99,7 +99,7 @@ def test_online_coadds_smoke(dither, rotate):
         assert coadd.psf.image.shape == psf_dims
 
 
-def test_coadd_sim_psgauss_smoke():
+def test_coadd_psgauss_smoke():
     psf_type = 'gauss'
     rng = np.random.RandomState(8312)
     data = _make_sim(rng=rng, psf_type=psf_type)
@@ -111,7 +111,7 @@ def test_coadd_sim_psgauss_smoke():
     psf_dims = data['psf_dims']
 
     for band, exps in data['band_data'].items():
-        coadd = make_online_coadd_obs(
+        coadd = make_coadd_obs(
             exps=exps,
             coadd_wcs=data['coadd_wcs'],
             coadd_bbox=data['coadd_bbox'],
@@ -129,7 +129,7 @@ def test_coadd_sim_psgauss_smoke():
     "CATSIM_DIR" not in os.environ,
     reason='simulation input data is not present'
 )
-def test_coadd_sim_pspsf_smoke():
+def test_coadd_pspsf_smoke():
     psf_type = 'ps'
     rng = np.random.RandomState(8312)
     data = _make_sim(rng=rng, psf_type=psf_type, stars=True)
@@ -141,7 +141,7 @@ def test_coadd_sim_pspsf_smoke():
     psf_dims = data['psf_dims']
 
     for band, exps in data['band_data'].items():
-        coadd = make_online_coadd_obs(
+        coadd = make_coadd_obs(
             exps=exps,
             coadd_wcs=data['coadd_wcs'],
             coadd_bbox=data['coadd_bbox'],
@@ -157,7 +157,7 @@ def test_coadd_sim_pspsf_smoke():
 
 @pytest.mark.parametrize('dither', [False, True])
 @pytest.mark.parametrize('rotate', [False, True])
-def test_online_coadds_noise(dither, rotate):
+def test_coadds_noise(dither, rotate):
     rng = np.random.RandomState(55)
 
     # noise test currently only works with odd due to pixel offsets
@@ -178,7 +178,7 @@ def test_online_coadds_noise(dither, rotate):
         assert band in bdata
         exps = bdata[band]
 
-        coadd = make_online_coadd_obs(
+        coadd = make_coadd_obs(
             exps=exps,
             coadd_wcs=sim_data['coadd_wcs'],
             coadd_bbox=sim_data['coadd_bbox'],

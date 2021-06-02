@@ -3,7 +3,7 @@ import numpy as np
 from descwl_shear_sims.sim import make_sim
 from descwl_shear_sims.galaxies import make_galaxy_catalog
 from descwl_shear_sims.psfs import make_fixed_psf
-from ..online_coadds import make_online_coadd_obs
+from ..coadd import make_coadd_obs
 
 
 def test_cosmics():
@@ -33,7 +33,7 @@ def test_cosmics():
         epochs_per_band=10,  # so we get a CR
         cosmic_rays=True,
     )
-    coadd = make_online_coadd_obs(
+    coadd = make_coadd_obs(
         exps=data['band_data']['i'],
         coadd_wcs=data['coadd_wcs'],
         coadd_bbox=data['coadd_bbox'],
