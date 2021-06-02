@@ -16,14 +16,20 @@ from lsst.pipe.tasks.coaddInputRecorder import (
     CoaddInputRecorderTask,
     CoaddInputRecorderConfig,
 )
-from lsst.meas.algorithms import CoaddPsf, CoaddPsfConfig
+from lsst.meas.algorithms import (
+    CoaddPsf,
+    # CoaddPsfConfig,
+)
 import lsst.log
 
 import coord
 import ngmix
 
 from . import vis
-from .interp import interpolate_image_and_noise, replace_flag_with_noise
+from .interp import (
+    interpolate_image_and_noise,
+    # replace_flag_with_noise,
+)
 
 # remove when we remove SEObs based coadds
 # from descwl_shear_sims.lsst_bits import BRIGHT

@@ -328,7 +328,7 @@ def warp_and_add(stacker, warper, exp, coadd_wcs, coadd_bbox, weight):
     weight: float
         Weight for this image in the stack
     """
-    v = exp.variance.array
+    # v = exp.variance.array
     # print('-'*70)
     # print('wcs:', exp.getWcs())
     # print('exp var:', v.min(), np.median(v), v.max())
@@ -338,7 +338,7 @@ def warp_and_add(stacker, warper, exp, coadd_wcs, coadd_bbox, weight):
         maxBBox=exp.getBBox(),
         destBBox=coadd_bbox,
     )
-    v = wexp.variance.array
+    # v = wexp.variance.array
     # print('warp wcs:', exp.getWcs())
     # print(v.shape, 'warp var:', v.min(), np.median(v), v.max())
     stacker.add_masked_image(wexp, weight=weight)
