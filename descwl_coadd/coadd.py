@@ -340,7 +340,7 @@ def warp_and_add(stacker, warper, exp, coadd_wcs, coadd_bbox, weight):
     )
     v = wexp.variance.array
     # print('warp wcs:', exp.getWcs())
-    print(v.shape, 'warp var:', v.min(), np.median(v), v.max())
+    # print(v.shape, 'warp var:', v.min(), np.median(v), v.max())
     stacker.add_masked_image(wexp, weight=weight)
 
 
@@ -540,7 +540,7 @@ def get_psf_exp(exp, coadd_wcs, var):
     coadd_sky_orig = coadd_wcs.getSkyOrigin()
     wcs = exp.getWcs()
     pos = wcs.skyToPixel(coadd_sky_orig)
-    print('sky pos in pixels:', pos)
+    # print('sky pos in pixels:', pos)
 
     psf_obj = exp.getPsf()
     psf_image = psf_obj.computeImage(pos).array
@@ -551,7 +551,7 @@ def get_psf_exp(exp, coadd_wcs, var):
     cy += psf_offset.y
     cx += psf_offset.x
     psf_crpix = geom.Point2D(x=cx, y=cy)
-    print('psf crpix:', psf_crpix)
+    # print('psf crpix:', psf_crpix)
 
     cd_matrix = wcs.getCdMatrix(pos)
 
