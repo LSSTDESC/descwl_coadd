@@ -1,4 +1,3 @@
-import os
 import pytest
 import numpy as np
 
@@ -96,38 +95,6 @@ def test_coadds_smoke(dither, rotate):
         coadd_dims = (coadd_dim, )*2
         psf_dims = (psf_dim, )*2
         assert coadd.image.shape == coadd_dims
-        assert coadd.psf.image.shape == psf_dims
-
-        assert np.all(np.isfinite(coadd.psf.image))
-
-
-@pytest.mark.skipif(
-    "CATSIM_DIR" not in os.environ,
-    reason='simulation input data is not present'
-)
-def test_coadd_pspsf_smoke():
-    psf_type = 'ps'
-    rng = np.random.RandomState(8312)
-    data = _make_sim(rng=rng, psf_type=psf_type, stars=True)
-
-    extent = data['coadd_bbox'].getDimensions()
-    coadd_dims = (extent.getX(), extent.getY())
-    assert data['coadd_dims'] == coadd_dims
-
-    psf_dims = data['psf_dims']
-
-    for band, exps in data['band_data'].items():
-        coadd = make_coadd_obs(
-            exps=exps,
-            coadd_wcs=data['coadd_wcs'],
-            coadd_bbox=data['coadd_bbox'],
-            psf_dims=psf_dims,
-            rng=rng,
-            remove_poisson=False,
-        )
-
-        assert coadd.image.shape == coadd_dims
-        assert coadd.noise.shape == coadd_dims
         assert coadd.psf.image.shape == psf_dims
 
         assert np.all(np.isfinite(coadd.psf.image))
