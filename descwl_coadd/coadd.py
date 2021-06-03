@@ -564,9 +564,9 @@ def get_psf_exp(
 
     # print(f'coadd cen sky pos: {coadd_cen_skypos}')
     # print(f'sky pos in pixels: {pos}')
-    cen = (np.array(exp.image.array.shape)-1)/2
+    # cen = (np.array(exp.image.array.shape)-1)/2
     # print(f'im cen: {cen}')
-    val = exp.image[pos]
+    # val = exp.image[pos]
     # print(f'val at sky pos: {val}')
 
     psf_obj = exp.getPsf()
