@@ -98,31 +98,7 @@ def test_coadds_smoke(dither, rotate):
         assert coadd.image.shape == coadd_dims
         assert coadd.psf.image.shape == psf_dims
 
-
-def test_coadd_psgauss_smoke():
-    psf_type = 'gauss'
-    rng = np.random.RandomState(8312)
-    data = _make_sim(rng=rng, psf_type=psf_type)
-
-    extent = data['coadd_bbox'].getDimensions()
-    coadd_dims = (extent.getX(), extent.getY())
-    assert data['coadd_dims'] == coadd_dims
-
-    psf_dims = data['psf_dims']
-
-    for band, exps in data['band_data'].items():
-        coadd = make_coadd_obs(
-            exps=exps,
-            coadd_wcs=data['coadd_wcs'],
-            coadd_bbox=data['coadd_bbox'],
-            psf_dims=psf_dims,
-            rng=rng,
-            remove_poisson=False,
-        )
-
-        assert coadd.image.shape == coadd_dims
-        assert coadd.noise.shape == coadd_dims
-        assert coadd.psf.image.shape == psf_dims
+        assert np.all(np.isfinite(coadd.psf.image))
 
 
 @pytest.mark.skipif(
@@ -153,6 +129,8 @@ def test_coadd_pspsf_smoke():
         assert coadd.image.shape == coadd_dims
         assert coadd.noise.shape == coadd_dims
         assert coadd.psf.image.shape == psf_dims
+
+        assert np.all(np.isfinite(coadd.psf.image))
 
 
 @pytest.mark.parametrize('dither', [False, True])
@@ -190,7 +168,10 @@ def test_coadds_noise(dither, rotate):
         coadd_dims = (coadd_dim, )*2
         psf_dims = (psf_dim, )*2
         assert coadd.image.shape == coadd_dims
+        assert coadd.noise.shape == coadd_dims
         assert coadd.psf.image.shape == psf_dims
+
+        assert np.all(np.isfinite(coadd.psf.image))
 
         if not dither:
             emed = np.median(coadd.coadd_exp.variance.array)

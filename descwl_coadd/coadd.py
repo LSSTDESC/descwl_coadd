@@ -64,7 +64,7 @@ def make_coadd_obs(
     coadd_wcs: DM wcs object
         The target wcs
     coadd_bbox: geom.Box2I
-        The bounding fox for the coadd
+        The bounding box for the coadd within larger wcs system
     psf_dims: tuple
         The dimensions of the psf
     rng: np.random.RandomState
@@ -113,7 +113,7 @@ def make_coadd(
     coadd_wcs: DM wcs object
         The target wcs
     coadd_bbox: geom.Box2I
-        The bounding fox for the coadd
+        The bounding box for the coadd within larger wcs system
     psf_dims: tuple
         The dimensions of the psf
     rng: np.random.RandomState
@@ -131,11 +131,20 @@ def make_coadd(
 
     logger = make_logger('coadd', loglevel)
 
+    # sky center of this coadd within bbox
+    _, coadd_cen_skypos = get_coadd_center(
+        coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
+    )
+
     coadd_psf_bbox = geom.Box2I(
         geom.Point2I(0, 0),
         geom.Point2I(psf_dims[0]-1, psf_dims[1]-1),
     )
-    coadd_psf_wcs = get_coadd_psf_wcs(coadd_wcs, psf_dims)
+    coadd_psf_wcs = get_coadd_psf_wcs(
+        coadd_wcs=coadd_wcs,
+        coadd_bbox=coadd_bbox,
+        psf_dims=psf_dims,
+    )
 
     # separately stack data, noise, and psf
     coadd_exp = make_coadd_exposure(coadd_bbox, coadd_wcs)
@@ -169,7 +178,13 @@ def make_coadd(
         if exp is None:
             continue
 
-        psf_exp = get_psf_exp(exp, coadd_wcs, var)
+        psf_exp = get_psf_exp(
+            exp=exp,
+            coadd_cen_skypos=coadd_cen_skypos,
+            # coadd_wcs=coadd_wcs,
+            # coadd_bbox=coadd_bbox,
+            var=var,
+        )
         assert psf_exp.variance.array[0, 0] == noise_exp.variance.array[0, 0]
 
         weight = get_exp_weight(exp)
@@ -324,7 +339,7 @@ def warp_and_add(stacker, warper, exp, coadd_wcs, coadd_bbox, weight):
     coadd_wcs: DM wcs object
         The target wcs
     coadd_bbox: geom.Box2I
-        The bounding fox for the coadd
+        The bounding box for the coadd within larger wcs system
     weight: float
         Weight for this image in the stack
     """
@@ -338,9 +353,10 @@ def warp_and_add(stacker, warper, exp, coadd_wcs, coadd_bbox, weight):
         maxBBox=exp.getBBox(),
         destBBox=coadd_bbox,
     )
-    # v = wexp.variance.array
+    # wv = wexp.variance.array
     # print('warp wcs:', exp.getWcs())
-    # print(v.shape, 'warp var:', v.min(), np.median(v), v.max())
+    # print(wv.shape, 'warp var:', wv.min(), np.median(wv), wv.max())
+    # stop
     stacker.add_masked_image(wexp, weight=weight)
 
 
@@ -518,7 +534,11 @@ def get_noise_exp(exp, rng, remove_poisson):
     return noise_exp, var
 
 
-def get_psf_exp(exp, coadd_wcs, var):
+def get_psf_exp(
+    exp,
+    coadd_cen_skypos,
+    var,
+):
     """
     create a psf exposure to be coadded, rendered at the
     position in the exposure corresponding to the center of the
@@ -528,8 +548,9 @@ def get_psf_exp(exp, coadd_wcs, var):
     ----------
     exp: afw_image.ExposureF
         The exposure
-    coadd_wcs: DM wcs
-        The wcs for the coadd
+    coadd_cen_skypos: SpherePoint
+        The sky position of the center of the coadd within its
+        bbox
     var: float
         The variance to set in the psf variance map
 
@@ -537,10 +558,16 @@ def get_psf_exp(exp, coadd_wcs, var):
     -------
     psf ExposureF
     """
-    coadd_sky_orig = coadd_wcs.getSkyOrigin()
+
     wcs = exp.getWcs()
-    pos = wcs.skyToPixel(coadd_sky_orig)
-    # print('sky pos in pixels:', pos)
+    pos = wcs.skyToPixel(coadd_cen_skypos)
+
+    # print(f'coadd cen sky pos: {coadd_cen_skypos}')
+    # print(f'sky pos in pixels: {pos}')
+    cen = (np.array(exp.image.array.shape)-1)/2
+    # print(f'im cen: {cen}')
+    val = exp.image[pos]
+    # print(f'val at sky pos: {val}')
 
     psf_obj = exp.getPsf()
     psf_image = psf_obj.computeImage(pos).array
@@ -555,13 +582,16 @@ def get_psf_exp(exp, coadd_wcs, var):
 
     cd_matrix = wcs.getCdMatrix(pos)
 
-    psf_stack_wcs = makeSkyWcs(
+    psf_wcs = makeSkyWcs(
         crpix=psf_crpix,
-        crval=coadd_sky_orig,
+        crval=coadd_cen_skypos,
+        # crval=coadd_sky_orig,
         cdMatrix=cd_matrix,
     )
+    # print('psf wcs')
+    # print(psf_wcs)
 
-    # psf_stack_wcs = wcs.copyAtShiftedPixelOrigin(
+    # psf_wcs = wcs.copyAtShiftedPixelOrigin(
     #     lsst.geom.Extent2D(x=psf_offset.x, y=psf_offset.y)
     # )
     # TODO: deal with zeros
@@ -575,10 +605,32 @@ def get_psf_exp(exp, coadd_wcs, var):
     psf_exp = afw_image.ExposureF(pmasked_image)
 
     psf_exp.setFilterLabel(exp.getFilterLabel())
-    psf_exp.setWcs(psf_stack_wcs)
+    psf_exp.setWcs(psf_wcs)
     detector = DetectorWrapper().detector
     psf_exp.setDetector(detector)
+
     return psf_exp
+
+
+def get_coadd_center(coadd_wcs, coadd_bbox):
+    """
+    get the pixel and sky center of the coadd within the bbox
+
+    Parameters
+    -----------
+    coadd_wcs: DM wcs
+        The wcs for the coadd
+    coadd_bbox: geom.Box2I
+        The bounding box for the coadd within larger wcs system
+
+    Returns
+    -------
+    pixcen as Point2D, skycen as SpherePoint
+    """
+    pixcen = coadd_bbox.getCenter()
+    skycen = coadd_wcs.pixelToSky(pixcen)
+
+    return pixcen, skycen
 
 
 class CoaddObs(ngmix.Observation):
@@ -742,7 +794,7 @@ class CoaddObs(ngmix.Observation):
         )
 
 
-def get_coadd_psf_wcs(coadd_wcs, psf_dims):
+def get_coadd_psf_wcs(coadd_wcs, coadd_bbox, psf_dims):
     """
     create the coadd psf wcs
 
@@ -750,6 +802,8 @@ def get_coadd_psf_wcs(coadd_wcs, psf_dims):
     ----------
     coadd_wcs: DM wcs
         The coadd wcs
+    coadd_bbox: geom.Box2I
+        The bounding box for the coadd within larger wcs system
     psf_dims: tuple
         The dimensions of the psf
 
@@ -760,12 +814,18 @@ def get_coadd_psf_wcs(coadd_wcs, psf_dims):
     cy, cx = (np.array(psf_dims)-1)/2
     psf_crpix = geom.Point2D(x=cx, y=cy)
 
-    coadd_sky_orig = coadd_wcs.getSkyOrigin()
-    coadd_cd_matrix = coadd_wcs.getCdMatrix(coadd_wcs.getPixelOrigin())
+    coadd_pixcen, coadd_skycen = get_coadd_center(
+        coadd_wcs=coadd_wcs,
+        coadd_bbox=coadd_bbox,
+    )
+    coadd_cd_matrix = coadd_wcs.getCdMatrix(coadd_pixcen)
+
+    # coadd_skycen = coadd_wcs.getSkyOrigin()
+    # coadd_cd_matrix = coadd_wcs.getCdMatrix(coadd_wcs.getPixelOrigin())
 
     return makeSkyWcs(
         crpix=psf_crpix,
-        crval=coadd_sky_orig,
+        crval=coadd_skycen,
         cdMatrix=coadd_cd_matrix,
     )
 
