@@ -137,18 +137,9 @@ def make_coadd(
         coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
     )
 
-    # coadd_psf_bbox = geom.Box2I(
-    #     geom.Point2I(0, 0),
-    #     geom.Point2I(psf_dims[0]-1, psf_dims[1]-1),
-    # )
     coadd_psf_bbox = get_coadd_psf_bbox(
         x=coadd_cen.x, y=coadd_cen.y, dim=psf_dims[0],
     )
-    # coadd_psf_wcs = get_coadd_psf_wcs(
-    #     coadd_wcs=coadd_wcs,
-    #     coadd_bbox=coadd_bbox,
-    #     psf_dims=psf_dims,
-    # )
     coadd_psf_wcs = coadd_wcs
 
     # separately stack data, noise, and psf
@@ -188,6 +179,7 @@ def make_coadd(
             coadd_cen_skypos=coadd_cen_skypos,
             var=var,
         )
+
         assert psf_exp.variance.array[0, 0] == noise_exp.variance.array[0, 0]
 
         weight = get_exp_weight(exp)
@@ -255,7 +247,6 @@ def extract_coadd_psf(coadd_psf_exp, logger):
     KernelPsf
     """
     psf_image = coadd_psf_exp.image.array
-    vis.show_image_and_mask(coadd_psf_exp)
 
     wbad = np.where(~np.isfinite(psf_image))
     if wbad[0].size == psf_image.size:
@@ -347,22 +338,13 @@ def warp_and_add(stacker, warper, exp, coadd_wcs, coadd_bbox, weight):
     weight: float
         Weight for this image in the stack
     """
-    # v = exp.variance.array
-    # print('-'*70)
-    # print('wcs:', exp.getWcs())
-    # print('exp var:', v.min(), np.median(v), v.max())
-    print('exp bbox:', exp.getBBox())
-    print('dest bbox:', coadd_bbox)
     wexp = warper.warpExposure(
         coadd_wcs,
         exp,
         maxBBox=exp.getBBox(),
         destBBox=coadd_bbox,
     )
-    # wv = wexp.variance.array
-    # print('warp wcs:', exp.getWcs())
-    # print(wv.shape, 'warp var:', wv.min(), np.median(wv), wv.max())
-    # stop
+
     stacker.add_masked_image(wexp, weight=weight)
 
 
@@ -574,24 +556,14 @@ def get_psf_exp(
     psf_dim = psf_image.shape[0]
 
     psf_bbox = get_psf_bbox(pos=pos, dim=psf_dim)
-    print(psf_dim)
-    print(psf_bbox)
 
-    # pmasked_image = afw_image.MaskedImageF(psf_dim, psf_dim)
-    # pmasked_image.image.array[:, :] = psf_image
-    # pmasked_image.variance.array[:, :] = var
-    # pmasked_image.mask.array[:, :] = 0
-    #
-    # psf_exp = afw_image.ExposureF(pmasked_image)
     # wcs same as SE exposure
     psf_exp = afw_image.ExposureF(psf_bbox, wcs)
     psf_exp.image.array[:, :] = psf_image
     psf_exp.variance.array[:, :] = var
     psf_exp.mask.array[:, :] = 0
-    print('exp shape:', psf_exp.image.array.shape)
 
     psf_exp.setFilterLabel(exp.getFilterLabel())
-    # psf_exp.setWcs(wcs)
     detector = DetectorWrapper().detector
     psf_exp.setDetector(detector)
 
@@ -637,8 +609,8 @@ def get_coadd_psf_bbox(x, y, dim):
     xpix = int(x)
     ypix = int(y)
 
-    xmin = (xpix - (dim-1))/2
-    ymin = (ypix - (dim-1))/2
+    xmin = (xpix - (dim - 1)/2)
+    ymin = (ypix - (dim - 1)/2)
 
     return geom.Box2I(
         geom.Point2I(xmin, ymin),
