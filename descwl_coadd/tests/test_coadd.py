@@ -61,7 +61,7 @@ def _make_sim(
         rotate=dither,
     )
 
-
+'''
 @pytest.mark.parametrize('dither', [False, True])
 @pytest.mark.parametrize('rotate', [False, True])
 def test_coadds_smoke(dither, rotate):
@@ -98,17 +98,18 @@ def test_coadds_smoke(dither, rotate):
         assert coadd.psf.image.shape == psf_dims
 
         assert np.all(np.isfinite(coadd.psf.image))
-
+'''
 
 @pytest.mark.parametrize('dither', [False, True])
 @pytest.mark.parametrize('rotate', [False, True])
 def test_coadds_noise(dither, rotate):
     rng = np.random.RandomState(55)
 
-    # noise test currently only works with odd due to pixel offsets
-    # used for psf coadding.  Same goes for dithering
     coadd_dim = 101
     psf_dim = 51
+
+    cen = (coadd_dim - 1)//2
+    pcen = (psf_dim - 1)//2
 
     bands = ['r', 'i', 'z']
     sim_data = _make_sim(
@@ -140,10 +141,9 @@ def test_coadds_noise(dither, rotate):
 
         assert np.all(np.isfinite(coadd.psf.image))
 
-        if not dither:
-            emed = np.median(coadd.coadd_exp.variance.array)
-            pmed = np.median(coadd.coadd_psf_exp.variance.array)
-            nmed = np.median(coadd.coadd_noise_exp.variance.array)
+        emed = coadd.coadd_exp.variance.array[cen, cen]
+        pmed = coadd.coadd_psf_exp.variance.array[pcen, pcen]
+        nmed = coadd.coadd_noise_exp.variance.array[cen, cen]
 
-            assert abs(pmed/emed-1) < 1.0e-3
-            assert abs(nmed/emed-1) < 1.0e-3
+        assert abs(pmed/emed-1) < 1.0e-3
+        assert abs(nmed/emed-1) < 1.0e-3
