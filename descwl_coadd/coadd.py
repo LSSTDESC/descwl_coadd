@@ -130,21 +130,26 @@ def make_coadd(
     """
 
     logger = make_logger('coadd', loglevel)
+    check_psf_dims(psf_dims)
 
     # sky center of this coadd within bbox
-    _, coadd_cen_skypos = get_coadd_center(
+    coadd_cen, coadd_cen_skypos = get_coadd_center(
         coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
     )
 
-    coadd_psf_bbox = geom.Box2I(
-        geom.Point2I(0, 0),
-        geom.Point2I(psf_dims[0]-1, psf_dims[1]-1),
+    # coadd_psf_bbox = geom.Box2I(
+    #     geom.Point2I(0, 0),
+    #     geom.Point2I(psf_dims[0]-1, psf_dims[1]-1),
+    # )
+    coadd_psf_bbox = get_coadd_psf_bbox(
+        x=coadd_cen.x, y=coadd_cen.y, dim=psf_dims[0],
     )
-    coadd_psf_wcs = get_coadd_psf_wcs(
-        coadd_wcs=coadd_wcs,
-        coadd_bbox=coadd_bbox,
-        psf_dims=psf_dims,
-    )
+    # coadd_psf_wcs = get_coadd_psf_wcs(
+    #     coadd_wcs=coadd_wcs,
+    #     coadd_bbox=coadd_bbox,
+    #     psf_dims=psf_dims,
+    # )
+    coadd_psf_wcs = coadd_wcs
 
     # separately stack data, noise, and psf
     coadd_exp = make_coadd_exposure(coadd_bbox, coadd_wcs)
@@ -181,8 +186,6 @@ def make_coadd(
         psf_exp = get_psf_exp(
             exp=exp,
             coadd_cen_skypos=coadd_cen_skypos,
-            # coadd_wcs=coadd_wcs,
-            # coadd_bbox=coadd_bbox,
             var=var,
         )
         assert psf_exp.variance.array[0, 0] == noise_exp.variance.array[0, 0]
@@ -252,6 +255,7 @@ def extract_coadd_psf(coadd_psf_exp, logger):
     KernelPsf
     """
     psf_image = coadd_psf_exp.image.array
+    vis.show_image_and_mask(coadd_psf_exp)
 
     wbad = np.where(~np.isfinite(psf_image))
     if wbad[0].size == psf_image.size:
@@ -347,6 +351,8 @@ def warp_and_add(stacker, warper, exp, coadd_wcs, coadd_bbox, weight):
     # print('-'*70)
     # print('wcs:', exp.getWcs())
     # print('exp var:', v.min(), np.median(v), v.max())
+    print('exp bbox:', exp.getBBox())
+    print('dest bbox:', coadd_bbox)
     wexp = warper.warpExposure(
         coadd_wcs,
         exp,
@@ -562,54 +568,82 @@ def get_psf_exp(
     wcs = exp.getWcs()
     pos = wcs.skyToPixel(coadd_cen_skypos)
 
-    # print(f'coadd cen sky pos: {coadd_cen_skypos}')
-    # print(f'sky pos in pixels: {pos}')
-    # cen = (np.array(exp.image.array.shape)-1)/2
-    # print(f'im cen: {cen}')
-    # val = exp.image[pos]
-    # print(f'val at sky pos: {val}')
-
     psf_obj = exp.getPsf()
     psf_image = psf_obj.computeImage(pos).array
-    psf_offset = get_psf_offset(pos)
-    # print('psf offset:', psf_offset)
 
-    cy, cx = (np.array(psf_image.shape)-1)/2
-    cy += psf_offset.y
-    cx += psf_offset.x
-    psf_crpix = geom.Point2D(x=cx, y=cy)
-    # print('psf crpix:', psf_crpix)
+    psf_dim = psf_image.shape[0]
 
-    cd_matrix = wcs.getCdMatrix(pos)
+    psf_bbox = get_psf_bbox(pos=pos, dim=psf_dim)
+    print(psf_dim)
+    print(psf_bbox)
 
-    psf_wcs = makeSkyWcs(
-        crpix=psf_crpix,
-        crval=coadd_cen_skypos,
-        # crval=coadd_sky_orig,
-        cdMatrix=cd_matrix,
-    )
-    # print('psf wcs')
-    # print(psf_wcs)
-
-    # psf_wcs = wcs.copyAtShiftedPixelOrigin(
-    #     lsst.geom.Extent2D(x=psf_offset.x, y=psf_offset.y)
-    # )
-    # TODO: deal with zeros
-
-    pny, pnx = psf_image.shape
-    pmasked_image = afw_image.MaskedImageF(pny, pnx)
-    pmasked_image.image.array[:, :] = psf_image
-    pmasked_image.variance.array[:, :] = var
-    pmasked_image.mask.array[:, :] = 0
-
-    psf_exp = afw_image.ExposureF(pmasked_image)
+    # pmasked_image = afw_image.MaskedImageF(psf_dim, psf_dim)
+    # pmasked_image.image.array[:, :] = psf_image
+    # pmasked_image.variance.array[:, :] = var
+    # pmasked_image.mask.array[:, :] = 0
+    #
+    # psf_exp = afw_image.ExposureF(pmasked_image)
+    # wcs same as SE exposure
+    psf_exp = afw_image.ExposureF(psf_bbox, wcs)
+    psf_exp.image.array[:, :] = psf_image
+    psf_exp.variance.array[:, :] = var
+    psf_exp.mask.array[:, :] = 0
+    print('exp shape:', psf_exp.image.array.shape)
 
     psf_exp.setFilterLabel(exp.getFilterLabel())
-    psf_exp.setWcs(psf_wcs)
+    # psf_exp.setWcs(wcs)
     detector = DetectorWrapper().detector
     psf_exp.setDetector(detector)
 
     return psf_exp
+
+
+def get_psf_bbox(pos, dim):
+    """
+    copied from https://github.com/beckermr/pizza-cutter/blob/66b9e443f840798996b659a4f6ce59930681c776/pizza_cutter/des_pizza_cutter/_se_image.py#L708
+    """  # noqa
+
+    # compute the lower left corner of the stamp
+    # we find the nearest pixel to the input (x, y)
+    # and offset by half the stamp size in pixels
+    # assumes the stamp size is odd
+    # there is an assert for this below
+
+    x = pos.x
+    y = pos.y
+
+    half = (dim - 1) / 2
+    x_cen = np.floor(x+0.5)
+    y_cen = np.floor(y+0.5)
+
+    # make sure this is true so pixel index math is ok
+    assert y_cen - half == int(y_cen - half)
+    assert x_cen - half == int(x_cen - half)
+
+    # compute bounds in Piff wcs coords
+    xmin = int(x_cen - half)
+    ymin = int(y_cen - half)
+
+    return geom.Box2I(
+        geom.Point2I(xmin, ymin),
+        geom.Point2I(xmin + dim-1, ymin + dim-1),
+    )
+
+
+def get_coadd_psf_bbox(x, y, dim):
+    """
+    suggested by Matt Becker
+    """
+    xpix = int(x)
+    ypix = int(y)
+
+    xmin = (xpix - (dim-1))/2
+    ymin = (ypix - (dim-1))/2
+
+    return geom.Box2I(
+        geom.Point2I(xmin, ymin),
+        geom.Point2I(xmin + dim-1, ymin + dim-1),
+    )
 
 
 def get_coadd_center(coadd_wcs, coadd_bbox):
@@ -893,3 +927,11 @@ def get_psf_offset(pos):
         x=pos.x - int(pos.x + 0.5),
         y=pos.y - int(pos.y + 0.5),
     )
+
+
+def check_psf_dims(psf_dims):
+    """
+    ensure psf dimensions are square and odd
+    """
+    assert psf_dims[0] == psf_dims[1]
+    assert psf_dims[0] % 2 != 0
