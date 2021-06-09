@@ -61,7 +61,7 @@ def _make_sim(
         rotate=dither,
     )
 
-'''
+
 @pytest.mark.parametrize('dither', [False, True])
 @pytest.mark.parametrize('rotate', [False, True])
 def test_coadds_smoke(dither, rotate):
@@ -98,7 +98,7 @@ def test_coadds_smoke(dither, rotate):
         assert coadd.psf.image.shape == psf_dims
 
         assert np.all(np.isfinite(coadd.psf.image))
-'''
+
 
 @pytest.mark.parametrize('dither', [False, True])
 @pytest.mark.parametrize('rotate', [False, True])

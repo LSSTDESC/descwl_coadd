@@ -23,7 +23,6 @@ Then check bits for masked fraction
 from numba import njit
 import numpy as np
 import ngmix
-from lsst.afw.geom import makeSkyWcs
 import lsst.afw.math as afw_math
 import lsst.afw.image as afw_image
 from lsst.pipe.tasks.accumulatorMeanStack import (
@@ -277,7 +276,8 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
 
     Returns
     -------
-    exp, noise_exp
+    exp, noise_exp, var
+        where var is the median of the variance for the exposure
     """
     if isinstance(exp_or_ref, DeferredDatasetHandle):
         exp = exp_or_ref.get()
@@ -310,7 +310,7 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
         bad_flags=flags2interp,
     )
     if iimage is None:
-        return None, None
+        return None, None, None
 
     exp.image.array[:, :] = iimage
     noise_exp.image.array[:, :] = inoise
@@ -709,7 +709,12 @@ class CoaddObs(ngmix.Observation):
         """
 
         coadd_wcs = self.coadd_exp.getWcs()
-        coadd_cen = coadd_wcs.getPixelOrigin()
+        coadd_bbox = self.coadd_exp.getBBox()
+
+        coadd_cen, coadd_cen_skypos = get_coadd_center(
+            coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
+        )
+
         dm_jac = coadd_wcs.linearizePixelToSky(coadd_cen, geom.arcseconds)
         matrix = dm_jac.getLinear().getMatrix()
 
@@ -729,7 +734,11 @@ class CoaddObs(ngmix.Observation):
         """
 
         coadd_wcs = self.coadd_exp.getWcs()
-        coadd_cen = coadd_wcs.getPixelOrigin()
+        coadd_bbox = self.coadd_exp.getBBox()
+
+        coadd_cen, coadd_cen_skypos = get_coadd_center(
+            coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
+        )
 
         psf_obj = self.coadd_exp.getPsf()
         psf_image = psf_obj.computeKernelImage(coadd_cen).array
@@ -800,42 +809,6 @@ class CoaddObs(ngmix.Observation):
         )
 
 
-def get_coadd_psf_wcs(coadd_wcs, coadd_bbox, psf_dims):
-    """
-    create the coadd psf wcs
-
-    Parameters
-    ----------
-    coadd_wcs: DM wcs
-        The coadd wcs
-    coadd_bbox: geom.Box2I
-        The bounding box for the coadd within larger wcs system
-    psf_dims: tuple
-        The dimensions of the psf
-
-    Returns
-    -------
-    A DM SkyWcs
-    """
-    cy, cx = (np.array(psf_dims)-1)/2
-    psf_crpix = geom.Point2D(x=cx, y=cy)
-
-    coadd_pixcen, coadd_skycen = get_coadd_center(
-        coadd_wcs=coadd_wcs,
-        coadd_bbox=coadd_bbox,
-    )
-    coadd_cd_matrix = coadd_wcs.getCdMatrix(coadd_pixcen)
-
-    # coadd_skycen = coadd_wcs.getSkyOrigin()
-    # coadd_cd_matrix = coadd_wcs.getCdMatrix(coadd_wcs.getPixelOrigin())
-
-    return makeSkyWcs(
-        crpix=psf_crpix,
-        crval=coadd_skycen,
-        cdMatrix=coadd_cd_matrix,
-    )
-
-
 def make_logger(name, loglevel):
     """
     make a logger with the specified loglevel
@@ -846,8 +819,21 @@ def make_logger(name, loglevel):
 
 
 def zero_bits(image, noise, mask, flags):
+    """
+    zero the image and noise where the input flags are set
+
+    Parameters
+    ----------
+    image: array
+        The image to be modified
+    noise: array
+        The noise image to be modified
+    mask: array
+        bitmask array to be checked
+    flags: int
+        An integer representing the bitmask
+    """
     w = np.where((mask & flags) != 0)
-    # w = np.where(mask != 0)
     if w[0].size > 0:
         image[w] = 0.0
         noise[w] = 0.0
@@ -856,9 +842,6 @@ def zero_bits(image, noise, mask, flags):
 def flag_bright_as_sat(exp):
     """
     flag BRIGHT also as SAT so no detections will occur there
-
-    we currently pull the bitmask value from the descwl_shear_sims
-    package
     """
 
     mask = exp.mask.array
