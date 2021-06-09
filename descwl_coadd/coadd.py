@@ -224,6 +224,8 @@ def make_coadd_exposure(coadd_bbox, coadd_wcs):
     ExpsureF
     """
     coadd_exp = afw_image.ExposureF(coadd_bbox, coadd_wcs)
+
+    # these planes are added by DM, add them here for consistency
     coadd_exp.mask.addMaskPlane("REJECTED")
     coadd_exp.mask.addMaskPlane("CLIPPED")
     coadd_exp.mask.addMaskPlane("SENSOR_EDGE")
