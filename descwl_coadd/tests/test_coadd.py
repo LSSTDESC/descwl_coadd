@@ -141,7 +141,15 @@ def test_coadds_mfrac(dither, rotate):
 
         assert np.all(np.isfinite(coadd.psf.image))
         assert not np.all(coadd.mfrac == 0)
-        print(np.max(coadd.mfrac))
+        assert np.max(coadd.mfrac) > 0.1
+        assert np.mean(coadd.mfrac) < 0.05
+
+        if False:
+            import matplotlib.pyplot as plt
+            plt.figure()
+            plt.imshow(coadd.mfrac)
+            import pdb
+            pdb.set_trace()
 
 
 @pytest.mark.parametrize('dither', [False, True])
