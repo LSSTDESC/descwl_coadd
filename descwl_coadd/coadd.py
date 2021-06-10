@@ -1,1067 +1,679 @@
 """
-coadd lsst dm stack exposures
-"""
-import numpy as np
-from numba import njit
+TODO
+    - actually try to run it
+    - psf coadds
+    - noise coadds; may want to generate the noise images on the fly
+      within this code
 
+So I'll just set andMask for EDGE and all other bits get passed on, and I can
+check on the fly if there are any EDGE in the coadd region
+
+Reject warps with NO_DATA set; for HSC this can be set for chips near the edge
+of the focal plane
+
+check EDGE and NO_DATA are not set in warp mask, eli expects NO_DATA should not be set
+
+BUT, warps are the exact size of the coadd, which for standard patches is
+bigger than an image so we can't do any of this yet!
+
+Then check bits for masked fraction
+    bad = np.where(mask & BADSTUFF != 0)
+    maskfrac = bad[0].size / mask.size
+"""
+from numba import njit
+import numpy as np
+import ngmix
+import lsst.afw.math as afw_math
+import lsst.afw.image as afw_image
+from lsst.pipe.tasks.accumulatorMeanStack import (
+    AccumulatorMeanStack,
+    stats_ctrl_to_threshold_dict,
+)
+from lsst.pipe.tasks.assembleCoadd import AssembleCoaddTask
+from lsst.daf.butler import DeferredDatasetHandle
+import lsst.log
 import lsst.geom as geom
-from lsst.afw.geom import makeSkyWcs
-from lsst.daf.base import PropertyList
+from lsst.afw.cameraGeom.testUtils import DetectorWrapper
 from lsst.meas.algorithms import KernelPsf
 from lsst.afw.math import FixedKernel
-from lsst.afw.cameraGeom.testUtils import DetectorWrapper
-import lsst.afw.image as afw_image
-import lsst.afw.math as afw_math
-from lsst.pipe.tasks.coaddInputRecorder import (
-    CoaddInputRecorderTask,
-    CoaddInputRecorderConfig,
-)
-from lsst.meas.algorithms import CoaddPsf, CoaddPsfConfig
-import lsst.log
-
-import coord
-import ngmix
 
 from . import vis
-from .interp import interpolate_image_and_noise, replace_flag_with_noise
+from .interp import interpolate_image_and_noise
+from esutil.pbar import PBar
 
-# remove when we remove SEObs based coadds
-# from descwl_shear_sims.lsst_bits import BRIGHT
-# TODO figure out how to add this as a mask plane for the exposures
-# we generate in the sim, and add it to the calexp after we read them
-# and find bright stars etc.
-BRIGHT = np.int32(2**30)
+DEFAULT_INTERP = 'lanczos3'
+DEFAULT_LOGLEVEL = 'info'
 
-# we interpolate the saturated pixels, and note the
-# currently BRIGHT is mapped onto SAT until we add
-# the BRIGHT plane
-FLAGS2INTERP = (
-    afw_image.Mask.getPlaneBitMask('BAD') |
-    afw_image.Mask.getPlaneBitMask('CR') |
-    afw_image.Mask.getPlaneBitMask('SAT')
-)
-
-# currently just BRIGHT, but
-# TODO instead keep masked frac (averaged across exposures)
-# rather than just looking at overall masked frac based
-# on or mask.  BRIGHT (currently setting to SAT) will
-# be in all the images equally
-FLAGS_FOR_MASKFRAC = BRIGHT
+FLAGS2INTERP = ('BAD', 'CR', 'SAT')
 
 
-class MultiBandCoadds(object):
-    """Coadd images within and across bands.
+def make_coadd_obs(
+    exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson,
+    loglevel=DEFAULT_LOGLEVEL,
+):
+    """
+    Make a coadd from the input exposures and store in a CoaddObs, which
+    inherits from ngmix.Observation. See make_coadd for docs on online
+    coadding.
 
     Parameters
     ----------
-    data: dict
-        dict keyed by band.  Each entry is a list of "SEObs", which should have
-        image, weight, noise, wcs attributes, as well as get_psf method.  For
-        example see the simple sim from descwl_shear_testing
-    coadd_wcs: galsim wcs
-        wcs for final cuadd
-    coadd_dims: (ny, nx)
-        Dimensions of the main coadd.
-    psf_dims: (ny, nx)
-        Dimensions of the PSF coadd.
-    byband: bool
-        If True, make coadds for individual bands as well as over all
-        bands
-    show: bool
-        If True show some images, default False
-    loglevel: string
-        Default info
+    exps: list
+        Either a list of exposures or a list of DeferredDatasetHandle
+    coadd_wcs: DM wcs object
+        The target wcs
+    coadd_bbox: geom.Box2I
+        The bounding box for the coadd within larger wcs system
+    psf_dims: tuple
+        The dimensions of the psf
     rng: np.random.RandomState
-        Random state used for replace_bright
-    use_stack_interp: bool
-        If True, use the stacks interpolation, default False
-    interp_bright: bool
-        If True, mark BRIGHT as SAT and do interpolation
+        The random number generator for making noise images
+    remove_poisson: bool
+        If True, remove the poisson noise from the variance
+        estimate.
+    loglevel : str, optional
+        The logging level. Default is 'info'.
+
+    Returns
+    -------
+    CoaddObs (inherits from ngmix.Observation)
     """
-    def __init__(
-        self, *,
-        data,
+
+    coadd_exp, coadd_noise_exp, coadd_psf_exp = make_coadd(
+        exps=exps, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
+        psf_dims=psf_dims,
+        rng=rng, remove_poisson=remove_poisson,
+        loglevel=loglevel,
+    )
+    if coadd_exp is None:
+        return None
+
+    return CoaddObs(
+        coadd_exp=coadd_exp,
+        coadd_noise_exp=coadd_noise_exp,
+        coadd_psf_exp=coadd_psf_exp,
+        loglevel=loglevel,
+    )
+
+
+def make_coadd(
+    exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson,
+    loglevel=DEFAULT_LOGLEVEL,
+):
+    """
+    make a coadd from the input exposures, working in "online mode",
+    adding each exposure separately.  This saves memory when
+    the exposures are being read from disk
+
+    Parameters
+    ----------
+    exps: list
+        Either a list of exposures or a list of DeferredDatasetHandle
+    coadd_wcs: DM wcs object
+        The target wcs
+    coadd_bbox: geom.Box2I
+        The bounding box for the coadd within larger wcs system
+    psf_dims: tuple
+        The dimensions of the psf
+    rng: np.random.RandomState
+        The random number generator for making noise images
+    remove_poisson: bool
+        If True, remove the poisson noise from the variance
+        estimate.
+    loglevel : str, optional
+        The logging level. Default is 'info'.
+
+    Returns
+    -------
+    ExposureF for coadd
+    """
+
+    logger = make_logger('coadd', loglevel)
+    check_psf_dims(psf_dims)
+
+    # sky center of this coadd within bbox
+    coadd_cen, coadd_cen_skypos = get_coadd_center(
+        coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
+    )
+
+    coadd_psf_bbox = get_coadd_psf_bbox(
+        x=coadd_cen.x, y=coadd_cen.y, dim=psf_dims[0],
+    )
+    coadd_psf_wcs = coadd_wcs
+
+    # separately stack data, noise, and psf
+    coadd_exp = make_coadd_exposure(coadd_bbox, coadd_wcs)
+    coadd_noise_exp = make_coadd_exposure(coadd_bbox, coadd_wcs)
+    coadd_psf_exp = make_coadd_exposure(coadd_psf_bbox, coadd_psf_wcs)
+
+    mask = afw_image.Mask.getPlaneBitMask('EDGE')
+    coadd_dims = coadd_exp.image.array.shape
+
+    stacker = make_stacker(mask=mask, coadd_dims=coadd_dims)
+    noise_stacker = make_stacker(mask=mask, coadd_dims=coadd_dims)
+    psf_stacker = make_stacker(mask=mask, coadd_dims=psf_dims)
+
+    # can re-use the warper for each coadd type
+    warp_config = afw_math.Warper.ConfigClass()
+    warp_config.warpingKernelName = DEFAULT_INTERP
+    warper = afw_math.Warper.fromConfig(warp_config)
+
+    # will zip these with the exposures to warp and add
+    stackers = [stacker, noise_stacker, psf_stacker]
+    wcss = [coadd_wcs, coadd_wcs, coadd_psf_wcs]
+    bboxes = [coadd_bbox, coadd_bbox, coadd_psf_bbox]
+
+    nuse = 0
+    logger.info('warping and adding exposures')
+
+    for exp_or_ref in PBar(exps):
+        exp, noise_exp, var = get_exp_and_noise(
+            exp_or_ref=exp_or_ref, rng=rng, remove_poisson=remove_poisson,
+        )
+        if exp is None:
+            continue
+
+        psf_exp = get_psf_exp(
+            exp=exp,
+            coadd_cen_skypos=coadd_cen_skypos,
+            var=var,
+        )
+
+        assert psf_exp.variance.array[0, 0] == noise_exp.variance.array[0, 0]
+
+        weight = get_exp_weight(exp)
+
+        # order must match stackers, wcss, bboxes
+        exps2add = [exp, noise_exp, psf_exp]
+
+        for _stacker, _exp, _wcs, _bbox in zip(stackers, exps2add, wcss, bboxes):
+            warp_and_add(
+                _stacker, warper, _exp, _wcs, _bbox, weight,
+            )
+        nuse += 1
+
+    if nuse == 0:
+        return None, None, None
+
+    stacker.fill_stacked_masked_image(coadd_exp.maskedImage)
+    noise_stacker.fill_stacked_masked_image(coadd_noise_exp.maskedImage)
+    psf_stacker.fill_stacked_masked_image(coadd_psf_exp.maskedImage)
+
+    logger.info('making psf')
+    psf = extract_coadd_psf(coadd_psf_exp, logger)
+    coadd_exp.setPsf(psf)
+    coadd_noise_exp.setPsf(psf)
+
+    return coadd_exp, coadd_noise_exp, coadd_psf_exp
+
+
+def make_coadd_exposure(coadd_bbox, coadd_wcs):
+    """
+    make a coadd exposure with extra mask planes for
+    rejected, clipped, sensor_edge
+
+    Parameters
+    ----------
+    coadd_bbox: geom.Box2I
+        the bbox for the coadd exposure
+    coads_wcs: DM wcs
+        The wcs for the coadd exposure
+
+    Returns
+    -------
+    ExpsureF
+    """
+    coadd_exp = afw_image.ExposureF(coadd_bbox, coadd_wcs)
+
+    # these planes are added by DM, add them here for consistency
+    coadd_exp.mask.addMaskPlane("REJECTED")
+    coadd_exp.mask.addMaskPlane("CLIPPED")
+    coadd_exp.mask.addMaskPlane("SENSOR_EDGE")
+    return coadd_exp
+
+
+def extract_coadd_psf(coadd_psf_exp, logger):
+    """
+    extract the PSF image, zeroing the image where
+    there are "bad" pixels, associated with areas not
+    covered by the input psfs
+
+    Parameters
+    ----------
+    coadd_psf_exp: afw_image.ExposureF
+        The psf exposure
+
+    Returns
+    -------
+    KernelPsf
+    """
+    psf_image = coadd_psf_exp.image.array
+
+    wbad = np.where(~np.isfinite(psf_image))
+    if wbad[0].size == psf_image.size:
+        raise ValueError('no good pixels in the psf')
+
+    if wbad[0].size > 0:
+        logger.info('zeroing %d bad psf pixels' % wbad[0].size)
+        psf_image[wbad] = 0.0
+
+    return KernelPsf(
+        FixedKernel(
+            afw_image.ImageD(psf_image.astype(np.float))
+        )
+    )
+
+
+def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
+    """
+    get the exposure (possibly from a deferred handle) and create
+    a corresponding noise exposure
+
+    TODO move interpolating BRIGHT into metadetect or mdet-lsst-sim
+
+    Parameters
+    ----------
+    exp_or_ref: afw_image.ExposureF or DeferredDatasetHandle
+        The input exposure, possible deferred
+
+    Returns
+    -------
+    exp, noise_exp, var
+        where var is the median of the variance for the exposure
+    """
+    if isinstance(exp_or_ref, DeferredDatasetHandle):
+        exp = exp_or_ref.get()
+    else:
+        exp = exp_or_ref
+
+    var = exp.variance.array
+    weight = 1/var
+
+    flag_bright_as_sat(exp)
+
+    noise_exp, var = get_noise_exp(
+        exp=exp, rng=rng, remove_poisson=remove_poisson,
+    )
+
+    # noise and image will have zeros in EDGE
+    zero_bits(
+        image=exp.image.array,
+        noise=noise_exp.image.array,
+        mask=exp.mask.array,
+        flags=afw_image.Mask.getPlaneBitMask('EDGE'),
+    )
+
+    flags2interp = exp.mask.getPlaneBitMask(FLAGS2INTERP)
+    iimage, inoise = interpolate_image_and_noise(
+        image=exp.image.array,
+        noise=noise_exp.image.array,
+        weight=weight,
+        bmask=exp.mask.array,
+        bad_flags=flags2interp,
+    )
+    if iimage is None:
+        return None, None, None
+
+    exp.image.array[:, :] = iimage
+    noise_exp.image.array[:, :] = inoise
+
+    return exp, noise_exp, var
+
+
+def warp_and_add(stacker, warper, exp, coadd_wcs, coadd_bbox, weight):
+    """
+    warp the exposure and add it
+
+    Parameters
+    ----------
+    stacker: AccumulatorMeanStack
+        A stacker, type
+        lsst.pipe.tasks.accumulatorMeanStack.AccumulatorMeanStack
+    warper: afw_math.Warper
+        The warper
+    exp: afw_image.ExposureF
+        The exposure to warp and add
+    coadd_wcs: DM wcs object
+        The target wcs
+    coadd_bbox: geom.Box2I
+        The bounding box for the coadd within larger wcs system
+    weight: float
+        Weight for this image in the stack
+    """
+    wexp = warper.warpExposure(
         coadd_wcs,
-        coadd_dims,
-        psf_dims,
-        byband=True,
-        show=False,
-        loglevel='info',
-        rng=None,
-        use_stack_interp=False,
-        interp_bright=False,
-        replace_bright=False,
-    ):
+        exp,
+        maxBBox=exp.getBBox(),
+        destBBox=coadd_bbox,
+    )
 
-        assert use_stack_interp is False
+    stacker.add_masked_image(wexp, weight=weight)
 
-        self._rng = (
-            rng if isinstance(rng, np.random.RandomState)
-            else np.random.RandomState(seed=rng)
-        )
-        self.replace_bright = replace_bright
-        self.interp_bright = interp_bright
 
-        self._show = show
-        self.log = lsst.log.getLogger("MultiBandCoadds")
-        self.log.setLevel(getattr(lsst.log, loglevel.upper()))
-        self.loglevel = loglevel
+def make_stacker(mask, coadd_dims):
+    """
+    make an AccumulatorMeanStack to do online coadding
 
-        self.data = data
-        self.coadd_wcs = coadd_wcs
-        self.coadd_dims = coadd_dims
-        self.psf_dims = psf_dims
-        self.byband = byband
-        self.use_stack_interp = use_stack_interp
+    Parameters
+    ----------
+    mask: int
+        The mask bits for andMask
+    coadd_bbox: geom.Box2I
+        The coadd bbox
+    """
 
-        self._make_exps()
-        self._make_coadds()
+    stats_ctrl = get_coadd_stats_control(
+        mask=afw_image.Mask.getPlaneBitMask('EDGE')
+    )
 
-    @property
-    def bands(self):
-        """
-        get list of bands
-        """
-        return [k for k in self.data]
+    mask_map = AssembleCoaddTask.setRejectedMaskMapping(stats_ctrl)
 
-    def get_coadd(self, band=None):
-        """
-        get a coadd
+    cefiv = stats_ctrl.getCalcErrorFromInputVariance()
 
-        Parameters
-        ----------
-        band: str, optional
-            Band for coadd, if None return coadd over all bands
+    mask_threshold_dict = stats_ctrl_to_threshold_dict(stats_ctrl)
+    return AccumulatorMeanStack(
+        shape=coadd_dims,
+        bit_mask_value=stats_ctrl.getAndMask(),
+        mask_threshold_dict=mask_threshold_dict,
+        mask_map=mask_map,
+        no_good_pixels_mask=stats_ctrl.getNoGoodPixelsMask(),
+        calc_error_from_input_variance=cefiv,
+        compute_n_image=False,
+    )
 
-        Returns
-        -------
-        Coadd for band
-        """
-        if band is None:
-            return self.coadds['all']
-        else:
-            return self.coadds[band]
 
-    def _make_exps(self):
-        """
-        make lsst stack exposures for each image and noise image
-        """
+def get_coadd_stats_control(mask):
+    """
+    get a afw_math.StatisticsControl with "and mask" set
 
-        from lsst.afw.cameraGeom.testUtils import DetectorWrapper
+    Parameters
+    ----------
+    mask: mask for setAndMask
+        Bits for which the pixels will not be added to the coadd.
+        e.g. we would not let EDGE pixels get coadded
 
-        self.log.info('making exps')
+    Returns
+    -------
+    afw_math.StatisticsControl
+    """
+    stats_ctrl = afw_math.StatisticsControl()
+    stats_ctrl.setAndMask(mask)
+    # not used by the Accumulator
+    # stats_ctrl.setWeighted(True)
+    stats_ctrl.setCalcErrorFromInputVariance(True)
 
-        cwcs = self.coadd_wcs
+    # TODO when we make the BRIGHT plane, we will have BRIGHT at 0.0 here but
+    # not so for others (e.g. SAT should be 0.1 or whatever)
+    # TODO make this part of a configuration
 
-        exps = []
-        noise_exps = []
-        psf_exps = []
-        byband_exps = {}
-        byband_noise_exps = {}
-        byband_psf_exps = {}
+    # we want to always propagate BRIGHT, which is currently translated to
+    # SAT
+    mask_prop_thresh = {
+        'SAT': 0.0,
+    }
+    for plane, threshold in mask_prop_thresh.items():
+        bit = afw_image.Mask.getMaskPlane(plane)
+        stats_ctrl.setMaskPropagationThreshold(bit, threshold)
 
-        for band in self.data:
-            bdata = self.data[band]
-            byband_exps[band] = []
-            byband_noise_exps[band] = []
-            byband_psf_exps[band] = []
+    return stats_ctrl
 
-            for epoch_ind, se_obs in enumerate(bdata):
 
-                wcs = se_obs.wcs
-                pos = wcs.toImage(cwcs.center)
+def get_exp_weight(exp):
+    """
+    get a afw_math.StatisticsControl with "and mask" set
 
-                image = se_obs.image.array
-                noise = se_obs.noise.array
-                bmask = se_obs.bmask.array
-                weight = se_obs.weight.array
+    Parameters
+    ----------
+    mask: mask for setAndMask
+        Bits for which the pixels will not be added to the coadd.
+        e.g. we would not let EDGE pixels get coadded
 
-                if self.replace_bright:
-                    replace_flag_with_noise(
-                        rng=self._rng,
-                        image=image,
-                        noise_image=noise,
-                        weight=weight,
-                        mask=bmask,
-                        flag=BRIGHT,
-                    )
+    Returns
+    -------
+    afw_math.StatisticsControl
+    """
+    # Compute variance weight
+    stats_ctrl = afw_math.StatisticsControl()
+    stats_ctrl.setCalcErrorFromInputVariance(True)
+    stat_obj = afw_math.makeStatistics(
+        exp.variance,
+        exp.mask,
+        afw_math.MEANCLIP,
+        stats_ctrl,
+    )
 
-                if not self.use_stack_interp:
-                    zero_bits(
-                        image=image, noise=noise, mask=bmask,
-                        flags=afw_image.Mask.getPlaneBitMask('EDGE'),
-                    )
-                    if self.interp_bright:
-                        flag_bright_as_sat(mask=bmask)
+    mean_var, mean_var_err = stat_obj.getResult(afw_math.MEANCLIP)
+    weight = 1.0 / float(mean_var)
+    return weight
 
-                    image, noise = interpolate_image_and_noise(
-                        image=image,
-                        noise=noise,
-                        weight=weight,
-                        bmask=bmask,
-                        bad_flags=FLAGS2INTERP,
-                    )
-                    if image is None:
-                        self.log.info('mask frac too high, skipping epoch')
-                        continue
 
-                    if self._show:
-                        vis.show_images([
-                            image,
-                            bmask,
-                            noise,
-                        ])
+def get_dims_from_bbox(bbox):
+    """
+    get (nrows, ncols) numpy style from bbox
 
-                weight = se_obs.weight.array
+    Parameters
+    ----------
+    bbox: geom.Box2I
+        The bbox
 
-                psf_gsimage, psf_offset = se_obs.get_psf(
-                    pos.x,
-                    pos.y,
-                    center_psf=False,
-                    get_offset=True,
-                )
-                psf_image = psf_gsimage.array
+    Returns
+    -------
+    (nrows, ncols)
+    """
+    ncols = bbox.getEndX() - bbox.getBeginX()
+    nrows = bbox.getEndY() - bbox.getBeginY()
 
-                # TODO: deal with zeros
-                w = np.where(weight > 0)
-                assert w[0].size == weight.size
-                noise_var = 1.0/weight
+    # dims is C/numpy ordering
+    return nrows, ncols
 
-                sy, sx = image.shape
 
-                masked_image = afw_image.MaskedImageF(sx, sy)
-                masked_image.image.array[:, :] = image
-                masked_image.variance.array[:, :] = noise_var
-                masked_image.mask.array[:, :] = bmask
+def get_noise_exp(exp, rng, remove_poisson):
+    """
+    get a noise image based on the input exposure
 
-                nmasked_image = afw_image.MaskedImageF(sx, sy)
-                nmasked_image.image.array[:, :] = noise
-                nmasked_image.variance.array[:, :] = noise_var
-                nmasked_image.mask.array[:, :] = bmask
+    TODO gain correct separately in each amplifier, currently
+    averaged
 
-                # an exp for the PSF
-                # we need to put a var here that is consistent with the
-                # main image to get a consistent coadd.  I'm not sure
-                # what the best choice is, using median for now TODO
-                pny, pnx = psf_image.shape
-                pmasked_image = afw_image.MaskedImageF(pny, pnx)
-                pmasked_image.image.array[:, :] = psf_image
-                pmasked_image.variance.array[:, :] = np.median(noise_var)
-                pmasked_image.mask.array[:, :] = 0
+    Parameters
+    ----------
+    exp: afw.image.ExposureF
+        The exposure upon which to base the noise
+    rng: np.random.RandomState
+        The random number generator for making the noise image
+    remove_poisson: bool
+        If True, remove the poisson noise from the variance
+        estimate.
 
-                exp = afw_image.ExposureF(masked_image)
-                nexp = afw_image.ExposureF(nmasked_image)
-                psf_exp = afw_image.ExposureF(pmasked_image)
+    Returns
+    -------
+    noise exposure
+    """
+    signal = exp.image.array
+    variance = exp.variance.array.copy()
 
-                filter_label = afw_image.FilterLabel(band=band, physical=band)
-                exp.setFilterLabel(filter_label)
-                nexp.setFilterLabel(filter_label)
-                psf_exp.setFilterLabel(filter_label)
+    use = np.where(np.isfinite(variance) & np.isfinite(signal))
 
-                exp.setPsf(make_stack_psf(psf_image))
-                nexp.setPsf(make_stack_psf(psf_image))
+    if remove_poisson:
+        gains = [
+            amp.getGain() for amp in exp.getDetector().getAmplifiers()
+        ]
+        mean_gain = np.mean(gains)
 
-                exp.setWcs(make_stack_wcs(wcs))
-                nexp.setWcs(make_stack_wcs(wcs))
-                psf_exp.setWcs(make_stack_psf_wcs(
-                    dims=psf_gsimage.array.shape,
-                    jac=psf_gsimage.wcs,
-                    offset=psf_offset,
-                    world_origin=wcs.center,
-                ))
+        corrected_var = variance[use] - signal[use] / mean_gain
 
-                detector = DetectorWrapper().detector
-                exp.setDetector(detector)
-                nexp.setDetector(detector)
-                psf_exp.setDetector(detector)
+        var = np.median(corrected_var)
+    else:
+        var = np.median(variance[use])
 
-                if self.use_stack_interp:
-                    add_cosmics_to_noise(exp=exp, noise_exp=nexp)
-                    add_badcols_to_noise(exp=exp, noise_exp=nexp)
+    noise_image = rng.normal(scale=np.sqrt(var), size=signal.shape)
 
-                    repair_exp(exp, show=False)
-                    repair_exp(nexp, show=False)
+    ny, nx = signal.shape
+    nmimage = afw_image.MaskedImageF(width=nx, height=ny)
+    assert nmimage.image.array.shape == (ny, nx)
 
-                if self._show:
-                    vis.show_image_and_mask(exp)
-                    input('hit a key')
+    nmimage.image.array[:, :] = noise_image
+    nmimage.variance.array[:, :] = var
+    nmimage.mask.array[:, :] = exp.mask.array[:, :]
 
-                exps.append(exp)
-                noise_exps.append(nexp)
-                byband_exps[band].append(exp)
-                byband_noise_exps[band].append(nexp)
+    noise_exp = afw_image.ExposureF(nmimage)
+    noise_exp.setPsf(exp.getPsf())
+    noise_exp.setWcs(exp.getWcs())
+    noise_exp.setFilterLabel(exp.getFilterLabel())
+    noise_exp.setDetector(exp.getDetector())
 
-                psf_exps.append(psf_exp)
-                byband_psf_exps[band].append(psf_exp)
+    return noise_exp, var
 
-        self.exps = exps
-        self.noise_exps = noise_exps
-        self.psf_exps = psf_exps
-        self.byband_exps = byband_exps
-        self.byband_noise_exps = byband_noise_exps
-        self.byband_psf_exps = byband_psf_exps
 
-    def _make_coadds(self):
-        """
-        make all coadds
-        """
-        self.log.info('making coadds')
+def get_psf_exp(
+    exp,
+    coadd_cen_skypos,
+    var,
+):
+    """
+    create a psf exposure to be coadded, rendered at the
+    position in the exposure corresponding to the center of the
+    coadd
 
-        # dict are now ordered since python 3.6
-        self.coadds = {}
+    Parameters
+    ----------
+    exp: afw_image.ExposureF
+        The exposure
+    coadd_cen_skypos: SpherePoint
+        The sky position of the center of the coadd within its
+        bbox
+    var: float
+        The variance to set in the psf variance map
 
-        if len(self.exps) == 0:
-            self.log.info('no good exps')
-            self.coadds['all'] = None
-            for band in self.byband_exps:
-                self.coadds[band] = None
-            return
+    Returns
+    -------
+    psf ExposureF
+    """
 
-        if self.byband:
-            for band in self.byband_exps:
-                self.coadds[band] = CoaddObs(
-                    exps=self.byband_exps[band],
-                    psf_exps=self.byband_psf_exps[band],
-                    noise_exps=self.byband_noise_exps[band],
-                    coadd_wcs=self.coadd_wcs,
-                    coadd_dims=self.coadd_dims,
-                    psf_dims=self.psf_dims,
-                    loglevel=self.loglevel,
-                )
-                self.coadds[band].meta['mask_frac'] = get_masked_frac(
-                    mask=self.coadds[band].ormask,
-                    flags=FLAGS_FOR_MASKFRAC,
-                )
+    wcs = exp.getWcs()
+    pos = wcs.skyToPixel(coadd_cen_skypos)
 
-        self.coadds['all'] = CoaddObs(
-            exps=self.exps,
-            noise_exps=self.noise_exps,
-            psf_exps=self.psf_exps,
-            coadd_wcs=self.coadd_wcs,
-            coadd_dims=self.coadd_dims,
-            psf_dims=self.psf_dims,
-            loglevel=self.loglevel,
-        )
-        self.coadds['all'].meta['mask_frac'] = get_masked_frac(
-            mask=self.coadds['all'].ormask,
-            flags=FLAGS_FOR_MASKFRAC,
-        )
-        if self._show:
-            self.coadds['all'].show()
+    psf_obj = exp.getPsf()
+    psf_image = psf_obj.computeImage(pos).array
+
+    psf_dim = psf_image.shape[0]
+
+    psf_bbox = get_psf_bbox(pos=pos, dim=psf_dim)
+
+    # wcs same as SE exposure
+    psf_exp = afw_image.ExposureF(psf_bbox, wcs)
+    psf_exp.image.array[:, :] = psf_image
+    psf_exp.variance.array[:, :] = var
+    psf_exp.mask.array[:, :] = 0
+
+    psf_exp.setFilterLabel(exp.getFilterLabel())
+    detector = DetectorWrapper().detector
+    psf_exp.setDetector(detector)
+
+    return psf_exp
+
+
+def get_psf_bbox(pos, dim):
+    """
+    copied from https://github.com/beckermr/pizza-cutter/blob/66b9e443f840798996b659a4f6ce59930681c776/pizza_cutter/des_pizza_cutter/_se_image.py#L708
+    """  # noqa
+
+    # compute the lower left corner of the stamp
+    # we find the nearest pixel to the input (x, y)
+    # and offset by half the stamp size in pixels
+    # assumes the stamp size is odd
+    # there is an assert for this below
+
+    x = pos.x
+    y = pos.y
+
+    half = (dim - 1) / 2
+    x_cen = np.floor(x+0.5)
+    y_cen = np.floor(y+0.5)
+
+    # make sure this is true so pixel index math is ok
+    assert y_cen - half == int(y_cen - half)
+    assert x_cen - half == int(x_cen - half)
+
+    # compute bounds in Piff wcs coords
+    xmin = int(x_cen - half)
+    ymin = int(y_cen - half)
+
+    return geom.Box2I(
+        geom.Point2I(xmin, ymin),
+        geom.Point2I(xmin + dim-1, ymin + dim-1),
+    )
+
+
+def get_coadd_psf_bbox(x, y, dim):
+    """
+    suggested by Matt Becker
+    """
+    xpix = int(x)
+    ypix = int(y)
+
+    xmin = (xpix - (dim - 1)/2)
+    ymin = (ypix - (dim - 1)/2)
+
+    return geom.Box2I(
+        geom.Point2I(xmin, ymin),
+        geom.Point2I(xmin + dim-1, ymin + dim-1),
+    )
+
+
+def get_coadd_center(coadd_wcs, coadd_bbox):
+    """
+    get the pixel and sky center of the coadd within the bbox
+
+    Parameters
+    -----------
+    coadd_wcs: DM wcs
+        The wcs for the coadd
+    coadd_bbox: geom.Box2I
+        The bounding box for the coadd within larger wcs system
+
+    Returns
+    -------
+    pixcen as Point2D, skycen as SpherePoint
+    """
+    pixcen = coadd_bbox.getCenter()
+    skycen = coadd_wcs.pixelToSky(pixcen)
+
+    return pixcen, skycen
 
 
 class CoaddObs(ngmix.Observation):
-    """Make a coadd exposure for the input exposures and noise exposures.
+    """
+    Class representing a coadd observation
 
-    Note that this class is a subclass of an `ngmix.Observation` and so it
-    has all of the usual methods and attributes.
-
-    All input parameters are stored as attriubutes on the object.
+    Note that this class is a subclass of an `ngmix.Observation` and so it has
+    all of the usual methods and attributes.
 
     Parameters
     ----------
-    exps : list of afw_image.ExposureF
-        The list of images to coadd.
-    noise_exps : list of afw_image.ExposureF
-        The list of noise images to coadd.
-    psf_exps : list of afw_image.ExposureF
-        the list of PSF images to coadd.
-    coadd_wcs : DM stack sky WCS object
-        The WCS for the final coadd.
-    coadd_dims : 2-tuple of ints
-        The dimensions of the coadd in (y, x)
-    psf_dims : 2-tuple of ints
-        The dimensions of the psf coadd in (y, x).
+    coadd_exp : afw_image.ExposureF
+        The coadd exposure
+    noise_exp : afw_image.ExposureF
+        The coadded noise exposure
+    coadd_psf_exp : afw_image.ExposureF
+        The psf coadd
     loglevel : str, optional
         The logging level. Default is 'info'.
-
-    Attributes
-    ----------
-    interp : str
-        The kind of interpolation used for the coadd. Currently always lanczos3.
-    coadd_psf_wcs : DM stack sky WCS object
-        The WCS for the PSF exposure.
-    coadd_psf_exp : DM stack exposure
-        The coadded PSF.
-    coadd_exp : DM stack exposure
-        The coadded image.
-    coadd_noise_exp : DM stack exposure
-        The coadded noise image.
-    """
-    def __init__(self, *,
-                 exps,
-                 noise_exps,
-                 psf_exps,
-                 coadd_wcs,
-                 coadd_dims,
-                 psf_dims,
-                 loglevel='info'):
-
-        import galsim
-
-        self.log = lsst.log.getLogger("CoaddObs")
-        self.log.setLevel(getattr(lsst.log, loglevel.upper()))
-        self.loglevel = loglevel
-
-        self.exps = exps
-        self.psf_exps = psf_exps
-        self.noise_exps = noise_exps
-        self.galsim_wcs = coadd_wcs
-        self.coadd_wcs = make_stack_wcs(coadd_wcs)
-        self.coadd_dims = coadd_dims
-        self.psf_dims = psf_dims
-
-        ceny, cenx = (np.array(coadd_dims)-1)/2
-        image_pos = galsim.PositionD(x=cenx, y=ceny)
-        jac = coadd_wcs.local(image_pos=image_pos)
-
-        self.coadd_psf_wcs = make_stack_psf_wcs(
-            dims=psf_dims,
-            offset=galsim.PositionD(x=0, y=0),
-            jac=jac,
-            world_origin=coadd_wcs.center,
-        )
-
-        self.interp = 'lanczos3'
-
-        self._make_coadds()
-        self._finish_init()
-
-    def show(self):
-        """show the output coadd in DS9"""
-        self.log.info('showing coadd in ds9')
-        vis.show_image_and_mask(self.coadd_exp)
-        # this will block
-        vis.show_images(
-            [
-                self.image,
-                self.coadd_exp.mask.array,
-                self.noise,
-                self.coadd_noise_exp.mask.array,
-                self.coadd_psf_exp.image.array,
-                # self.weight,
-            ],
-        )
-
-    def _make_coadds(self):
-        """
-        make warps and coadds for images and noise fields
-        """
-        image_data = self._make_warps(
-            exps=self.exps,
-            dims=self.coadd_dims,
-            wcs=self.coadd_wcs,
-            dopsf=True,
-        )
-
-        psf_data = self._make_warps(
-            exps=self.psf_exps,
-            dims=self.psf_dims,
-            wcs=self.coadd_psf_wcs,
-            dopsf=False,
-        )
-
-        noise_data = self._make_warps(
-            exps=self.noise_exps,
-            dims=self.coadd_dims,
-            wcs=self.coadd_wcs,
-            dopsf=True,
-        )
-
-        # we need the weights in the coadds to be the same
-        # so we replace them here
-        psf_data["weights"] = image_data["weights"]
-        noise_data["weights"] = image_data["weights"]
-
-        # now we coadd
-        self.coadd_psf_exp = self._make_coadd(**psf_data)
-        pimage = self.coadd_psf_exp.image.array
-        wbad = np.where(~np.isfinite(pimage))
-        if wbad[0].size == pimage.size:
-            raise ValueError('no good pixels in the psf')
-        if wbad[0].size > 0:
-            self.log.info('zeroing %d bad psf pixels' % wbad[0].size)
-            pimage[wbad] = 0.0
-
-        self.coadd_exp = self._make_coadd(**image_data)
-        self.coadd_exp.setPsf(make_stack_psf(pimage))
-
-        self.coadd_noise_exp = self._make_coadd(**noise_data)
-        self.coadd_noise_exp.setPsf(make_stack_psf(pimage))
-
-    def _make_warps(self, *, exps, dims, wcs, dopsf=False):
-        """
-        make the warp images
-        """
-
-        # Setup coadd/warp psf model
-        input_recorder_config = CoaddInputRecorderConfig()
-
-        input_recorder = CoaddInputRecorderTask(
-            config=input_recorder_config, name="dummy",
-        )
-
-        if dopsf:
-            coadd_psf_config = CoaddPsfConfig()
-            coadd_psf_config.warpingKernelName = self.interp
-
-        # warp stack images to coadd wcs
-        warp_config = afw_math.Warper.ConfigClass()
-
-        # currently allows up to lanczos5, but a small change would allow
-        # higher order
-        warp_config.warpingKernelName = self.interp
-        warper = afw_math.Warper.fromConfig(warp_config)
-
-        nx, ny = dims
-        sky_box = geom.Box2I(
-            geom.Point2I(0, 0),
-            geom.Point2I(nx-1, ny-1),
-        )
-
-        wexps = []
-        weight_list = []
-        for i, exp in enumerate(exps):
-
-            # Compute variance weight
-            stats_ctrl = afw_math.StatisticsControl()
-            stats_ctrl.setCalcErrorFromInputVariance(True)
-            stat_obj = afw_math.makeStatistics(
-                exp.variance,
-                exp.mask,
-                afw_math.MEANCLIP,
-                stats_ctrl,
-            )
-
-            mean_var, mean_var_err = stat_obj.getResult(afw_math.MEANCLIP)
-            weight = 1.0 / float(mean_var)
-            weight_list.append(weight)
-
-            wexp = warper.warpExposure(
-                wcs,
-                exp,
-                maxBBox=exp.getBBox(),
-                destBBox=sky_box,
-            )
-
-            # Need coadd psf because psf may not be valid over the whole image
-            ir_warp = input_recorder.makeCoaddTempExpRecorder(i, 1)
-            good_pixel = np.sum(np.isfinite(wexp.image.array))
-            ir_warp.addCalExp(exp, i, good_pixel)
-
-            if dopsf:
-                warp_psf = CoaddPsf(
-                    ir_warp.coaddInputs.ccds,
-                    wcs,
-                    coadd_psf_config.makeControl(),
-                )
-
-            wexp.getInfo().setCoaddInputs(ir_warp.coaddInputs)
-
-            if dopsf:
-                wexp.setPsf(warp_psf)
-
-            wexps.append(wexp)
-
-        data = {
-            'wexps': wexps,
-            'weights': weight_list,
-            'input_recorder': input_recorder,
-        }
-        if dopsf:
-            data['psf_config'] = coadd_psf_config
-
-        return data
-
-    def _make_coadd(self, *, wexps, weights, input_recorder, psf_config=None):
-        """
-        make a coadd from warp images, as well as psf coadd
-        """
-
-        # combine stack images using mean
-        stats_flags = afw_math.stringToStatisticsProperty("MEAN")
-        stats_ctrl = afw_math.StatisticsControl()
-        stats_ctrl.setCalcErrorFromInputVariance(True)
-        badmask = afw_image.Mask.getPlaneBitMask(['EDGE'])
-        stats_ctrl.setAndMask(badmask)
-        stats_ctrl.setWeighted(True)
-
-        masked_images = [w.getMaskedImage() for w in wexps]
-        stacked_image = afw_math.statisticsStack(
-            masked_images, stats_flags, stats_ctrl, weights, 0, 0)
-
-        stacked_exp = afw_image.ExposureF(stacked_image, self.coadd_wcs)
-        # stacked_exp.setWcs(self.coadd_wcs)
-        stacked_exp.getInfo().setCoaddInputs(input_recorder.makeCoaddInputs())
-        coadd_inputs = stacked_exp.getInfo().getCoaddInputs()
-
-        # Build coadd psf
-        for wexp, weight in zip(wexps, weights):
-            input_recorder.addVisitToCoadd(coadd_inputs, wexp, weight)
-
-        if psf_config is not None:
-            coadd_psf = CoaddPsf(
-                coadd_inputs.ccds,
-                self.coadd_wcs,
-                psf_config.makeControl(),
-            )
-            stacked_exp.setPsf(coadd_psf)
-
-        return stacked_exp
-
-    def _get_jac(self, *, cenx, ceny):
-        """
-        get jacobian at the coadd image center, and make
-        an ngmix jacobian with center specified (this is not the
-        position used to evaluate the jacobian)
-        """
-        import galsim
-
-        crpix = self.galsim_wcs.crpix
-        galsim_pos = galsim.PositionD(x=crpix[0], y=crpix[1])
-
-        galsim_jac = self.galsim_wcs.jacobian(image_pos=galsim_pos)
-
-        return ngmix.Jacobian(
-            x=cenx,
-            y=ceny,
-            dudx=galsim_jac.dudx,
-            dudy=galsim_jac.dudy,
-            dvdx=galsim_jac.dvdx,
-            dvdy=galsim_jac.dvdy,
-        )
-
-    def _get_psf_obs(self):
-        """
-        get the psf observation
-        """
-        crpix = self.galsim_wcs.crpix
-        stack_pos = geom.Point2D(crpix[0], crpix[1])
-
-        psf_obj = self.coadd_exp.getPsf()
-        psf_image = psf_obj.computeKernelImage(stack_pos).array
-
-        psf_cen = (np.array(psf_image.shape)-1.0)/2.0
-
-        psf_jac = self._get_jac(cenx=psf_cen[1], ceny=psf_cen[0])
-
-        psf_err = psf_image.max()*0.0001
-        psf_weight = psf_image*0 + 1.0/psf_err**2
-        return ngmix.Observation(
-            image=psf_image,
-            weight=psf_weight,
-            jacobian=psf_jac,
-        )
-
-    def _finish_init(self):
-        """
-        finish the init by sending the image etc. to the
-        Observation init
-        """
-        psf_obs = self._get_psf_obs()  # noqa
-
-        image = self.coadd_exp.image.array
-        noise = self.coadd_noise_exp.image.array
-
-        var = self.coadd_exp.variance.array.copy()
-        # print('var:', var)
-        # print('image:', image)
-        wnf = np.where(~np.isfinite(var))
-
-        if wnf[0].size == image.size:
-            raise ValueError('no good variance values')
-
-        if wnf[0].size > 0:
-            var[wnf] = -1
-
-        weight = var.copy()
-        weight[:, :] = 0.0
-
-        w = np.where(var > 0)
-        weight[w] = 1.0/var[w]
-
-        if wnf[0].size > 0:
-            # medval = np.sqrt(np.median(var[w]))
-            # weight[wbad] = medval
-            # TODO: add noise instead based on medval, need to send in rng
-            image[wnf] = 0.0
-            noise[wnf] = 0.0
-
-        cen = (np.array(image.shape)-1)/2
-        jac = self._get_jac(cenx=cen[1], ceny=cen[0])
-
-        super().__init__(
-            image=image,
-            noise=noise,
-            weight=weight,
-            bmask=np.zeros(image.shape, dtype='i4'),
-            ormask=self.coadd_exp.mask.array,
-            jacobian=jac,
-            psf=psf_obs,
-            store_pixels=False,
-        )
-
-
-class MultiBandCoaddsDM(object):
-    """
-    Coadd images within and across bands with input DM exposures
-
-    Parameters
-    ----------
-    data: dict
-        dict keyed by band.  Each entry is a list of "SEObs", which should have
-        image, weight, noise, wcs attributes, as well as get_psf method.  For
-        example see the simple sim from descwl_shear_testing
-    coadd_wcs: galsim wcs
-        wcs for final cuadd
-    coadd_bbox: geom.Box2I
-        bbox for coadd, can be in larger grid
-    psf_dims: (ny, nx)
-        Dimensions of the PSF coadd.
-    byband: bool
-        If True, make coadds for individual bands as well as over all
-        bands
-    show: bool
-        If True show some images, default False
-    loglevel: string
-        Default info
-    use_stack_interp: bool
-        If True, use the stacks interpolation, default False
-    interp_bright: bool
-        If True, mark BRIGHT as SAT and do interpolation
     """
     def __init__(
         self, *,
-        data,
-        coadd_wcs,
-        coadd_bbox,
-        psf_dims,
-        byband=True,
-        show=False,
+        coadd_exp,
+        coadd_noise_exp,
+        coadd_psf_exp,
         loglevel='info',
-        interp_bright=False,
-        use_stack_interp=False,
     ):
 
-        assert use_stack_interp is False
+        self.log = make_logger('CoaddObs', loglevel)
 
-        self.interp_bright = interp_bright
-        self._show = show
-        self.log = lsst.log.getLogger("MultiBandCoadds")
-        self.log.setLevel(getattr(lsst.log, loglevel.upper()))
-        self.loglevel = loglevel
+        self.coadd_exp = coadd_exp
+        self.coadd_psf_exp = coadd_psf_exp
+        self.coadd_noise_exp = coadd_noise_exp
 
-        self.data = data
-        self.coadd_wcs = coadd_wcs
-        self.coadd_bbox = coadd_bbox
-
-        self.psf_dims = psf_dims
-        self.byband = byband
-        self.use_stack_interp = use_stack_interp
-
-        self._process_exps()
-        self._make_coadds()
-
-    @property
-    def bands(self):
-        """
-        get list of bands
-        """
-        return [k for k in self.data]
-
-    def get_coadd(self, band=None):
-        """
-        get a coadd
-
-        Parameters
-        ----------
-        band: str, optional
-            Band for coadd, if None return coadd over all bands
-
-        Returns
-        -------
-        Coadd for band
-        """
-        if band is None:
-            return self.coadds['all']
-        else:
-            return self.coadds[band]
-
-    def _process_exps(self):
-        """
-        make lsst stack exposures for each image and noise image
-        interpolate stack exposures and noise exposures, produce psf
-        exposures for coadding
-
-        Exposures are skipped if masked fraction is too high
-        """
-
-        self.log.info('processing exps')
-
-        exps = []
-        noise_exps = []
-        psf_exps = []
-        byband_exps = {}
-        byband_noise_exps = {}
-        byband_psf_exps = {}
-
-        coadd_wcs = self.coadd_wcs
-        coadd_sky_orig = coadd_wcs.getSkyOrigin()
-
-        for band in self.data:
-            bdata = self.data[band]
-            byband_exps[band] = []
-            byband_noise_exps[band] = []
-            byband_psf_exps[band] = []
-
-            for epoch_ind, edata in enumerate(bdata):
-
-                exp = edata['exp']
-                noise_exp = edata['noise_exp']
-
-                image = exp.image.array
-                bmask = exp.mask.array
-                noise = noise_exp.image.array
-
-                var = exp.variance.array
-
-                weight = 1/var
-
-                if not self.use_stack_interp:
-                    zero_bits(
-                        image=image, noise=noise, mask=bmask,
-                        flags=afw_image.Mask.getPlaneBitMask('EDGE'),
-                    )
-
-                    if self.interp_bright:
-                        flag_bright_as_sat_dm(mask=bmask)
-
-                    iimage, inoise = interpolate_image_and_noise(
-                        image=image,
-                        noise=noise,
-                        weight=weight,
-                        bmask=bmask,
-                        bad_flags=FLAGS2INTERP,
-                    )
-                    if iimage is None:
-                        self.log.info('mask frac too high, skipping epoch')
-                        continue
-
-                    # these are references to arrays in the exps
-                    image[:, :] = image
-                    noise[:, :] = inoise
-
-                    if self._show:
-                        vis.show_images([
-                            image,
-                            bmask,
-                            noise,
-                        ])
-
-                # get location of center of coadd in this image
-                # TODO make sure this is the center of the image for LSST
-                # seems ok for HSC
-
-                wcs = exp.getWcs()
-                pos = wcs.skyToPixel(coadd_sky_orig)
-
-                psf_obj = exp.getPsf()
-                psf_image = psf_obj.computeImage(pos).array
-                psf_offset = get_psf_offset(pos)
-
-                cy, cx = (np.array(psf_image.shape)-1)/2
-                cy += psf_offset.y
-                cx += psf_offset.x
-                psf_crpix = geom.Point2D(x=cx, y=cy)
-
-                cd_matrix = wcs.getCdMatrix(pos)
-
-                psf_stack_wcs = makeSkyWcs(
-                    crpix=psf_crpix,
-                    crval=coadd_sky_orig,
-                    cdMatrix=cd_matrix,
-                )
-                # TODO: deal with zeros
-
-                # an exp for the PSF
-                # we need to put a var here that is consistent with the
-                # main image to get a consistent coadd.  I'm not sure
-                # what the best choice is, using median for now TODO
-                pny, pnx = psf_image.shape
-                pmasked_image = afw_image.MaskedImageF(pny, pnx)
-                pmasked_image.image.array[:, :] = psf_image
-                pmasked_image.variance.array[:, :] = np.median(var)
-                pmasked_image.mask.array[:, :] = 0
-
-                psf_exp = afw_image.ExposureF(pmasked_image)
-
-                psf_exp.setFilterLabel(exp.getFilterLabel())
-                psf_exp.setWcs(psf_stack_wcs)
-                detector = DetectorWrapper().detector
-                psf_exp.setDetector(detector)
-
-                if self.use_stack_interp:
-                    add_cosmics_to_noise(exp=exp, noise_exp=noise_exp)
-                    add_badcols_to_noise(exp=exp, noise_exp=noise_exp)
-
-                    repair_exp(exp, show=False)
-                    repair_exp(noise_exp, show=False)
-
-                if self._show:
-                    vis.show_image_and_mask(exp)
-                    input('hit a key')
-
-                exps.append(exp)
-                noise_exps.append(noise_exp)
-                byband_exps[band].append(exp)
-                byband_noise_exps[band].append(noise_exp)
-
-                psf_exps.append(psf_exp)
-                byband_psf_exps[band].append(psf_exp)
-
-        self.exps = exps
-        self.noise_exps = noise_exps
-        self.psf_exps = psf_exps
-        self.byband_exps = byband_exps
-        self.byband_noise_exps = byband_noise_exps
-        self.byband_psf_exps = byband_psf_exps
-
-    def _make_coadds(self):
-        """
-        make all coadds
-        """
-
-        # currently just BRIGHT but
-        # TODO instead keep masked frac (averaged across exposures)
-        # rather than just looking at overall masked frac based
-        # on or mask.  BRIGHT (currently setting to SAT) will
-        # be in all the images equally
-
-        flags_for_maskfrac = self.exps[0].mask.getPlaneBitMask('BRIGHT')
-
-        self.log.info('making coadds')
-
-        # dict are now ordered since python 3.6
-        self.coadds = {}
-
-        if len(self.exps) == 0:
-            self.log.info('no good exps')
-            self.coadds['all'] = None
-            for band in self.byband_exps:
-                self.coadds[band] = None
-            return
-
-        if self.byband:
-            for band in self.byband_exps:
-                self.coadds[band] = CoaddObsDM(
-                    exps=self.byband_exps[band],
-                    psf_exps=self.byband_psf_exps[band],
-                    noise_exps=self.byband_noise_exps[band],
-                    coadd_wcs=self.coadd_wcs,
-                    coadd_bbox=self.coadd_bbox,
-                    psf_dims=self.psf_dims,
-                    loglevel=self.loglevel,
-                )
-                self.coadds[band].meta['mask_frac'] = get_masked_frac(
-                    mask=self.coadds[band].ormask,
-                    flags=flags_for_maskfrac,
-                )
-
-        self.coadds['all'] = CoaddObsDM(
-            exps=self.exps,
-            noise_exps=self.noise_exps,
-            psf_exps=self.psf_exps,
-            coadd_wcs=self.coadd_wcs,
-            coadd_bbox=self.coadd_bbox,
-            psf_dims=self.psf_dims,
-            loglevel=self.loglevel,
-        )
-        self.coadds['all'].meta['mask_frac'] = get_masked_frac(
-            mask=self.coadds['all'].ormask,
-            flags=flags_for_maskfrac,
-        )
-        if self._show:
-            self.coadds['all'].show()
-
-
-class CoaddObsDM(ngmix.Observation):
-    """Make a coadd exposure for the input exposures and noise exposures.
-
-    Note that this class is a subclass of an `ngmix.Observation` and so it
-    has all of the usual methods and attributes.
-
-    All input parameters are stored as attriubutes on the object.
-
-    Parameters
-    ----------
-    exps : list of afw_image.ExposureF
-        The list of images to coadd.
-    noise_exps : list of afw_image.ExposureF
-        The list of noise images to coadd.
-    psf_exps : list of afw_image.ExposureF
-        the list of PSF images to coadd.
-    coadd_wcs : DM stack sky WCS object
-        The WCS for the final coadd.
-    coadd_bbox: 2-tuple of ints
-        The coadd pixel bbox (may be in larger tract pixels)
-    psf_dims : 2-tuple of ints
-        The dimensions of the psf coadd in (y, x).
-    loglevel : str, optional
-        The logging level. Default is 'info'.
-
-    Attributes
-    ----------
-    interp : str
-        The kind of interpolation used for the coadd. Currently always lanczos3.
-    coadd_psf_wcs : DM stack sky WCS object
-        The WCS for the PSF exposure.
-    coadd_psf_exp : DM stack exposure
-        The coadded PSF.
-    coadd_exp : DM stack exposure
-        The coadded image.
-    coadd_noise_exp : DM stack exposure
-        The coadded noise image.
-    """
-    def __init__(self, *,
-                 exps,
-                 noise_exps,
-                 psf_exps,
-                 coadd_wcs,
-                 coadd_bbox,
-                 psf_dims,
-                 loglevel='info'):
-
-        self.log = lsst.log.getLogger("CoaddObs")
-        self.log.setLevel(getattr(lsst.log, loglevel.upper()))
-        self.loglevel = loglevel
-
-        self.exps = exps
-        self.psf_exps = psf_exps
-        self.noise_exps = noise_exps
-        self.coadd_wcs = coadd_wcs
-        self.coadd_bbox = coadd_bbox
-        self.psf_dims = psf_dims
-
-        self._set_coadd_psf_wcs()
-
-        self.interp = 'lanczos3'
-
-        self._make_coadds()
         self._finish_init()
-
-    def _set_coadd_psf_wcs(self):
-        cy, cx = (np.array(self.psf_dims)-1)/2
-        psf_crpix = geom.Point2D(x=cx, y=cy)
-
-        coadd_wcs = self.coadd_wcs
-        coadd_sky_orig = coadd_wcs.getSkyOrigin()
-        coadd_cd_matrix = coadd_wcs.getCdMatrix(coadd_wcs.getPixelOrigin())
-
-        self.coadd_psf_wcs = makeSkyWcs(
-            crpix=psf_crpix,
-            crval=coadd_sky_orig,
-            cdMatrix=coadd_cd_matrix,
-        )
 
     def show(self):
         """
@@ -1069,168 +681,19 @@ class CoaddObsDM(ngmix.Observation):
         """
         self.log.info('showing coadd in ds9')
         vis.show_image_and_mask(self.coadd_exp)
+
+        vis.show_image(self.coadd_psf_exp.image.array, title='psf')
         # this will block
-        vis.show_images(
-            [
-                self.image,
-                self.coadd_exp.mask.array,
-                self.noise,
-                self.coadd_noise_exp.mask.array,
-                self.coadd_psf_exp.image.array,
-                # self.weight,
-            ],
-        )
-
-    def _make_coadds(self):
-        """
-        make warps and coadds for images and noise fields
-        """
-        image_data = self._make_warps(
-            exps=self.exps,
-            bbox=self.coadd_bbox,
-            wcs=self.coadd_wcs,
-        )
-        # note backwards from C/python order
-        psf_nx, psf_ny = self.psf_dims
-        psf_bbox = geom.Box2I(
-            geom.Point2I(0, 0),
-            geom.Point2I(psf_nx-1, psf_ny-1),
-        )
-
-        psf_data = self._make_warps(
-            exps=self.psf_exps,
-            bbox=psf_bbox,
-            wcs=self.coadd_psf_wcs,
-        )
-
-        noise_data = self._make_warps(
-            exps=self.noise_exps,
-            bbox=self.coadd_bbox,
-            wcs=self.coadd_wcs,
-        )
-
-        # we need the weights in the coadds to be the same
-        # so we replace them here
-        psf_data["weights"] = image_data["weights"]
-        noise_data["weights"] = image_data["weights"]
-
-        # now we coadd
-        self.coadd_psf_exp = self._make_coadd(**psf_data)
-        pimage = self.coadd_psf_exp.image.array
-        wbad = np.where(~np.isfinite(pimage))
-        if wbad[0].size == pimage.size:
-            raise ValueError('no good pixels in the psf')
-        if wbad[0].size > 0:
-            self.log.info('zeroing %d bad psf pixels' % wbad[0].size)
-            pimage[wbad] = 0.0
-
-        self.coadd_exp = self._make_coadd(**image_data)
-        self.coadd_exp.setPsf(make_stack_psf(pimage))
-
-        self.coadd_noise_exp = self._make_coadd(**noise_data)
-        self.coadd_noise_exp.setPsf(make_stack_psf(pimage))
-
-    def _make_warps(self, *, exps, bbox, wcs):
-        """
-        make the warp images
-
-        TODO warp individual exposures and add them in one at a time
-        """
-
-        # Setup coadd/warp psf model
-        input_recorder_config = CoaddInputRecorderConfig()
-
-        input_recorder = CoaddInputRecorderTask(
-            config=input_recorder_config, name="dummy",
-        )
-
-        # warp stack images to coadd wcs
-        warp_config = afw_math.Warper.ConfigClass()
-
-        # currently allows up to lanczos5, but a small change would allow
-        # higher order
-        warp_config.warpingKernelName = self.interp
-        warper = afw_math.Warper.fromConfig(warp_config)
-
-        wexps = []
-        weight_list = []
-        for i, exp in enumerate(exps):
-
-            # Compute variance weight
-            stats_ctrl = afw_math.StatisticsControl()
-            stats_ctrl.setCalcErrorFromInputVariance(True)
-            stat_obj = afw_math.makeStatistics(
-                exp.variance,
-                exp.mask,
-                afw_math.MEANCLIP,
-                stats_ctrl,
-            )
-
-            mean_var, mean_var_err = stat_obj.getResult(afw_math.MEANCLIP)
-            weight = 1.0 / float(mean_var)
-            weight_list.append(weight)
-
-            wexp = warper.warpExposure(
-                wcs,
-                exp,
-                maxBBox=exp.getBBox(),
-                destBBox=bbox,
-            )
-
-            # Need coadd psf because psf may not be valid over the whole image
-            ir_warp = input_recorder.makeCoaddTempExpRecorder(i, 1)
-            good_pixel = np.sum(np.isfinite(wexp.image.array))
-            ir_warp.addCalExp(exp, i, good_pixel)
-
-            wexp.getInfo().setCoaddInputs(ir_warp.coaddInputs)
-
-            wexps.append(wexp)
-
-        data = {
-            'wexps': wexps,
-            'weights': weight_list,
-            'input_recorder': input_recorder,
-        }
-
-        return data
-
-    def _make_coadd(self, *, wexps, weights, input_recorder, psf_config=None):
-        """
-        make a coadd from warp images, as well as psf coadd
-
-        TODO do "on-the-fly" warping and coadding to save memory
-        """
-
-        # combine stack images using mean
-        stats_flags = afw_math.stringToStatisticsProperty("MEAN")
-        stats_ctrl = afw_math.StatisticsControl()
-        stats_ctrl.setCalcErrorFromInputVariance(True)
-        badmask = afw_image.Mask.getPlaneBitMask(['EDGE'])
-        stats_ctrl.setAndMask(badmask)
-        stats_ctrl.setWeighted(True)
-
-        masked_images = [w.getMaskedImage() for w in wexps]
-        stacked_image = afw_math.statisticsStack(
-            masked_images, stats_flags, stats_ctrl, weights, 0, 0)
-
-        stacked_exp = afw_image.ExposureF(stacked_image, self.coadd_wcs)
-        # stacked_exp.setWcs(self.coadd_wcs)
-        stacked_exp.getInfo().setCoaddInputs(input_recorder.makeCoaddInputs())
-        coadd_inputs = stacked_exp.getInfo().getCoaddInputs()
-
-        # Build coadd psf
-        for wexp, weight in zip(wexps, weights):
-            input_recorder.addVisitToCoadd(coadd_inputs, wexp, weight)
-
-        if psf_config is not None:
-            coadd_psf = CoaddPsf(
-                coadd_inputs.ccds,
-                self.coadd_wcs,
-                psf_config.makeControl(),
-            )
-            stacked_exp.setPsf(coadd_psf)
-
-        return stacked_exp
+        # vis.show_images(
+        #     [
+        #         self.image,
+        #         self.coadd_exp.mask.array,
+        #         self.noise,
+        #         self.coadd_noise_exp.mask.array,
+        #         self.coadd_psf_exp.image.array,
+        #         # self.weight,
+        #     ],
+        # )
 
     def _get_jac(self, *, cenx, ceny):
         """
@@ -1247,8 +710,14 @@ class CoaddObsDM(ngmix.Observation):
             Center for the output ngmix jacobian (not place of evaluation)
         """
 
-        coadd_cen = self.coadd_wcs.getPixelOrigin()
-        dm_jac = self.coadd_wcs.linearizePixelToSky(coadd_cen, geom.arcseconds)
+        coadd_wcs = self.coadd_exp.getWcs()
+        coadd_bbox = self.coadd_exp.getBBox()
+
+        coadd_cen, coadd_cen_skypos = get_coadd_center(
+            coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
+        )
+
+        dm_jac = coadd_wcs.linearizePixelToSky(coadd_cen, geom.arcseconds)
         matrix = dm_jac.getLinear().getMatrix()
 
         # note convention differences
@@ -1266,7 +735,12 @@ class CoaddObsDM(ngmix.Observation):
         get the psf observation
         """
 
-        coadd_cen = self.coadd_wcs.getPixelOrigin()
+        coadd_wcs = self.coadd_exp.getWcs()
+        coadd_bbox = self.coadd_exp.getBBox()
+
+        coadd_cen, coadd_cen_skypos = get_coadd_center(
+            coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
+        )
 
         psf_obj = self.coadd_exp.getPsf()
         psf_image = psf_obj.computeKernelImage(coadd_cen).array
@@ -1277,6 +751,7 @@ class CoaddObsDM(ngmix.Observation):
 
         psf_err = psf_image.max()*0.0001
         psf_weight = psf_image*0 + 1.0/psf_err**2
+
         return ngmix.Observation(
             image=psf_image,
             weight=psf_weight,
@@ -1294,8 +769,6 @@ class CoaddObsDM(ngmix.Observation):
         noise = self.coadd_noise_exp.image.array
 
         var = self.coadd_exp.variance.array.copy()
-        # print('var:', var)
-        # print('image:', image)
         wnf = np.where(~np.isfinite(var))
 
         if wnf[0].size == image.size:
@@ -1331,202 +804,59 @@ class CoaddObsDM(ngmix.Observation):
             store_pixels=False,
         )
 
-
-def make_stack_psf(psf_image):
-    """
-    make fixed image psf for stack usage
-    """
-    return KernelPsf(
-        FixedKernel(
-            afw_image.ImageD(psf_image.astype(np.float))
+        flags_for_maskfrac = self.coadd_exp.mask.getPlaneBitMask('BRIGHT')
+        self.meta['mask_frac'] = get_masked_frac(
+            mask=self.ormask,
+            flags=flags_for_maskfrac,
         )
-    )
 
 
-def make_stack_wcs(wcs):
+def make_logger(name, loglevel):
     """
-    convert galsim tan wcs to stack wcs
+    make a logger with the specified loglevel
     """
-
-    if wcs.wcs_type == 'TAN':
-        crpix = wcs.crpix
-        stack_crpix = geom.Point2D(crpix[0], crpix[1])
-        cd_matrix = wcs.cd
-
-        crval = geom.SpherePoint(
-            wcs.center.ra/coord.radians,
-            wcs.center.dec/coord.radians,
-            geom.radians,
-        )
-        stack_wcs = makeSkyWcs(
-            crpix=stack_crpix,
-            crval=crval,
-            cdMatrix=cd_matrix,
-        )
-    elif wcs.wcs_type == 'TAN-SIP':
-        import galsim
-
-        # this is not used if the lower bounds are 1, but the extra keywords
-        # GS_{X,Y}MIN are set which we will remove below
-
-        fake_bounds = galsim.BoundsI(1, 10, 1, 10)
-        hdr = {}
-        wcs.writeToFitsHeader(hdr, fake_bounds)
-
-        del hdr["GS_XMIN"]
-        del hdr["GS_YMIN"]
-
-        metadata = PropertyList()
-
-        for key, value in hdr.items():
-            metadata.set(key, value)
-
-        stack_wcs = makeSkyWcs(metadata)
-
-    return stack_wcs
+    logger = lsst.log.getLogger(name)
+    logger.setLevel(getattr(lsst.log, loglevel.upper()))
+    return logger
 
 
-def make_stack_psf_wcs(*, dims, offset, jac, world_origin):
+def zero_bits(image, noise, mask, flags):
     """
-    convert the galsim jacobian wcs to stack wcs
-    for a tan projection
+    zero the image and noise where the input flags are set
 
     Parameters
     ----------
-    dims: (ny, nx)
-        dims of the psf
-    offset: seq or array
-        xoffset, yoffset
-    jac: galsim jacobian
-        From wcs
-    world_origin: origin of wcs
-        get from coadd_wcs.center
+    image: array
+        The image to be modified
+    noise: array
+        The noise image to be modified
+    mask: array
+        bitmask array to be checked
+    flags: int
+        An integer representing the bitmask
     """
-    import galsim
-
-    cy, cx = (np.array(dims)-1)/2
-    cy += offset.y
-    cx += offset.x
-    origin = galsim.PositionD(x=cx, y=cy)
-
-    tan_wcs = galsim.TanWCS(
-        affine=galsim.AffineTransform(
-            jac.dudx, jac.dudy, jac.dvdx, jac.dvdy,
-            origin=origin,
-            world_origin=galsim.PositionD(0, 0),
-        ),
-        world_origin=world_origin,
-        units=galsim.arcsec,
-    )
-
-    return make_stack_wcs(tan_wcs)
-
-
-def repair_exp(exp, show=False, border_size=None):
-    """
-    run a RepairTask, currently not sending defects just
-    finding cosmics and interpolating them
-
-    Parameters
-    ----------
-    exp:
-        an Exposure from the stack
-    border_size: bool
-        border size to zero
-    show: bool
-        If True, show the image
-    """
-    from lsst.pipe.tasks.repair import RepairTask, RepairConfig
-
-    if show:
-        print('before repair')
-        vis.show_image(exp.image.array)
-
-    if border_size is not None:
-        b = border_size
-        ny, nx = exp.image.array.shape
-        exp.image.array[0:b, :] = 0
-        exp.image.array[ny-b:, :] = 0
-        exp.image.array[:, 0:b] = 0
-        exp.image.array[:, nx-b:] = 0
-
-    repair_config = RepairConfig()
-    repair_task = RepairTask(config=repair_config)
-    repair_task.run(exposure=exp)
-
-    if show:
-        print('after repair')
-        vis.show_image(exp.image.array)
-
-
-def add_cosmics_to_noise(*, exp, noise_exp, value=1.0e18):
-    """
-    add fake cosmics to the noise exposure wherever
-    they are set in the real image
-
-    TODO: get a realistic value for the real data
-    """
-
-    CR = 2**afw_image.Mask.getMaskPlane('CR')  # noqa
-    w = np.where((exp.mask.array & CR) != 0)
-    print('pixels for cosmics:', w[0].size)
-    if w[0].size > 0:
-        noise_exp.image.array[w] = value
-
-
-def add_badcols_to_noise(*, exp, noise_exp):
-    """
-    Set bad cols in the noise image based on the real
-    image bits
-    """
-
-    BAD = 2**afw_image.Mask.getMaskPlane('BAD')  # noqa
-    w = np.where((exp.mask.array & BAD) != 0)
-    print('pixels for badcols:', w[0].size)
-    if w[0].size > 0:
-        noise_exp.image.array[w] = exp.image.array[w]
-
-
-def zero_bits(*, image, noise, mask, flags):
     w = np.where((mask & flags) != 0)
-    # w = np.where(mask != 0)
     if w[0].size > 0:
         image[w] = 0.0
         noise[w] = 0.0
 
 
-def flag_bright_as_sat(*, mask):
+def flag_bright_as_sat(exp):
     """
     flag BRIGHT also as SAT so no detections will occur there
-
-    we currently pull the bitmask value from the descwl_shear_sims
-    package
     """
 
-    w = np.where((mask & BRIGHT) != 0)
+    mask = exp.mask.array
+    brightval = exp.mask.getPlaneBitMask('BRIGHT')
+    satval = exp.mask.getPlaneBitMask('SAT')
+
+    w = np.where((mask & brightval) != 0)
     if w[0].size > 0:
-        satval = afw_image.Mask.getPlaneBitMask('SAT')
         mask[w] |= satval
 
 
-def flag_bright_as_sat_dm(*, mask):
-    """
-    flag BRIGHT also as SAT so no detections will occur there
-
-    we currently pull the bitmask value from the descwl_shear_sims
-    package
-    """
-
-    brightflag = mask.getPlaneBitMask('BRIGHT')
-    satflag = mask.getPlaneBitMask('SAT')
-
-    w = np.where((mask & brightflag) != 0)
-    if w[0].size > 0:
-        mask[w] |= satflag
-
-
 @njit
-def get_masked_frac(*, mask, flags):
+def get_masked_frac(mask, flags):
     nrows, ncols = mask.shape
 
     npixels = mask.size
@@ -1554,3 +884,11 @@ def get_psf_offset(pos):
         x=pos.x - int(pos.x + 0.5),
         y=pos.y - int(pos.y + 0.5),
     )
+
+
+def check_psf_dims(psf_dims):
+    """
+    ensure psf dimensions are square and odd
+    """
+    assert psf_dims[0] == psf_dims[1]
+    assert psf_dims[0] % 2 != 0
