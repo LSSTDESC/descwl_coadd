@@ -79,20 +79,20 @@ def make_coadd_obs(
     CoaddObs (inherits from ngmix.Observation)
     """
 
-    coadd_exp, coadd_noise_exp, coadd_psf_exp, coadd_mfrac_exp = make_coadd(
+    coadd_data = make_coadd(
         exps=exps, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
         psf_dims=psf_dims,
         rng=rng, remove_poisson=remove_poisson,
         loglevel=loglevel,
     )
-    if coadd_exp is None:
+    if coadd_data is None:
         return None
 
     return CoaddObs(
-        coadd_exp=coadd_exp,
-        coadd_noise_exp=coadd_noise_exp,
-        coadd_psf_exp=coadd_psf_exp,
-        coadd_mfrac_exp=coadd_mfrac_exp,
+        coadd_exp=coadd_data["coadd_exp"],
+        coadd_noise_exp=coadd_data["coadd_noise_exp"],
+        coadd_psf_exp=coadd_data["coadd_psf_exp"],
+        coadd_mfrac_exp=coadd_data["coadd_mfrac_exp"],
         loglevel=loglevel,
     )
 
@@ -126,14 +126,17 @@ def make_coadd(
 
     Returns
     -------
-    coadd_exp : ExposureF
-        The coadded image.
-    coadd_noise_exp : ExposureF
-        The coadded noise image.
-    coadd_psf_exp : ExposureF
-        The coadded PSF image.
-    coadd_mfrac_exp : ExposureF
-        The fraction of SE images interpolated in each coadd pixel.
+    coadd_data : dict
+        A dict with keys and values:
+
+            coadd_exp : ExposureF
+                The coadded image.
+            coadd_noise_exp : ExposureF
+                The coadded noise image.
+            coadd_psf_exp : ExposureF
+                The coadded PSF image.
+            coadd_mfrac_exp : ExposureF
+                The fraction of SE images interpolated in each coadd pixel.
     """
 
     logger = make_logger('coadd', loglevel)
@@ -210,7 +213,7 @@ def make_coadd(
         nuse += 1
 
     if nuse == 0:
-        return None, None, None
+        return None
 
     stacker.fill_stacked_masked_image(coadd_exp.maskedImage)
     noise_stacker.fill_stacked_masked_image(coadd_noise_exp.maskedImage)
@@ -222,7 +225,12 @@ def make_coadd(
     coadd_exp.setPsf(psf)
     coadd_noise_exp.setPsf(psf)
 
-    return coadd_exp, coadd_noise_exp, coadd_psf_exp, coadd_mfrac_exp
+    return dict(
+        coadd_exp=coadd_exp,
+        coadd_noise_exp=coadd_noise_exp,
+        coadd_psf_exp=coadd_psf_exp,
+        coadd_mfrac_exp=coadd_mfrac_exp,
+    )
 
 
 def make_coadd_exposure(coadd_bbox, coadd_wcs):
