@@ -18,6 +18,7 @@ def _make_sim(
     bands=['i', 'z'],
     coadd_dim=101,
     psf_dim=51,
+    bad_columns=False,
 ):
     buff = 5
 
@@ -59,6 +60,7 @@ def _make_sim(
         psf=psf,
         dither=dither,
         rotate=dither,
+        bad_columns=bad_columns,
     )
 
 
@@ -98,6 +100,48 @@ def test_coadds_smoke(dither, rotate):
         assert coadd.psf.image.shape == psf_dims
 
         assert np.all(np.isfinite(coadd.psf.image))
+        assert np.all(coadd.mfrac == 0)
+
+
+@pytest.mark.parametrize('dither', [False, True])
+@pytest.mark.parametrize('rotate', [False, True])
+def test_coadds_mfrac(dither, rotate):
+    rng = np.random.RandomState(55)
+
+    coadd_dim = 101
+    psf_dim = 51
+
+    bands = ['r', 'i', 'z']
+    sim_data = _make_sim(
+        rng=rng, psf_type='gauss', bands=bands,
+        coadd_dim=coadd_dim, psf_dim=psf_dim,
+        dither=dither, rotate=rotate,
+        bad_columns=True,
+    )
+
+    # coadd each band separately
+    bdata = sim_data['band_data']
+    for band in bands:
+        assert band in bdata
+        exps = bdata[band]
+
+        coadd = make_coadd_obs(
+            exps=exps,
+            coadd_wcs=sim_data['coadd_wcs'],
+            coadd_bbox=sim_data['coadd_bbox'],
+            psf_dims=sim_data['psf_dims'],
+            rng=rng,
+            remove_poisson=False,  # no object poisson noise in sims
+        )
+
+        coadd_dims = (coadd_dim, )*2
+        psf_dims = (psf_dim, )*2
+        assert coadd.image.shape == coadd_dims
+        assert coadd.psf.image.shape == psf_dims
+
+        assert np.all(np.isfinite(coadd.psf.image))
+        assert not np.all(coadd.mfrac == 0)
+        print(np.max(coadd.mfrac))
 
 
 @pytest.mark.parametrize('dither', [False, True])
@@ -140,6 +184,7 @@ def test_coadds_noise(dither, rotate):
         assert coadd.psf.image.shape == psf_dims
 
         assert np.all(np.isfinite(coadd.psf.image))
+        assert np.all(coadd.mfrac == 0)
 
         emed = coadd.coadd_exp.variance.array[cen, cen]
         pmed = coadd.coadd_psf_exp.variance.array[pcen, pcen]
