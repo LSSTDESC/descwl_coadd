@@ -189,7 +189,7 @@ class MultiBandCoadds(object):
                     if self.interp_bright:
                         flag_bright_as_sat_dm(mask=bmask)
 
-                    iimage, inoise = interpolate_image_and_noise(
+                    iimage, inoise, _ = interpolate_image_and_noise(
                         image=image,
                         noise=noise,
                         weight=weight,

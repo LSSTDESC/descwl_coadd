@@ -170,22 +170,24 @@ def interpolate_image_and_noise(
         The interpolated image.
     interp_noise : array-like
         The interpolated noise field.
+    interp_msk : array-like
+        Boolean mask indicating which pixels were interpolated.
     """
     bad_msk = (weight <= 0) | ((bmask & bad_flags) != 0)
 
     if np.any(bad_msk):
         interp_image = _grid_interp(image=image, bad_msk=bad_msk)
         if interp_image is None:
-            return None, None
+            return None, None, None
 
         interp_noise = _grid_interp(image=noise, bad_msk=bad_msk)
         if interp_noise is None:
-            return None, None
+            return None, None, None
 
-        return interp_image, interp_noise
+        return interp_image, interp_noise, bad_msk
     else:
         # return a copy here since the caller expects new images
-        return image.copy(), noise.copy()
+        return image.copy(), noise.copy(), np.zeros_like(image).astype(bool)
 
 
 def replace_flag_with_noise(*, rng, image, noise_image, weight, mask, flag):
