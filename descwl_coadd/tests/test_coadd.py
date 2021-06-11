@@ -1,3 +1,4 @@
+import os
 import pytest
 import numpy as np
 
@@ -204,6 +205,8 @@ def test_coadds_noise(dither, rotate):
         assert abs(nmed/emed-1) < 1.0e-3
 
 
+@pytest.mark.skipif('CATSIM_DIR' not in os.environ,
+                    reason='CATSIM_DIR not in os.environ')
 @pytest.mark.parametrize('dither', [False, True])
 @pytest.mark.parametrize('rotate', [False, True])
 def test_coadds_bright(dither, rotate):
