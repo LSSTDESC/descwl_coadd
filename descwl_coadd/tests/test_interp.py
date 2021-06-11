@@ -66,7 +66,7 @@ def test_interpolate_image_and_noise_weight():
 
     rng = np.random.RandomState(seed=42)
     noise = rng.normal(size=image.shape)
-    iimage, inoise = interpolate_image_and_noise(
+    iimage, inoise, imsk = interpolate_image_and_noise(
         image=image,
         weight=weight,
         bmask=bmask,
@@ -74,6 +74,7 @@ def test_interpolate_image_and_noise_weight():
         noise=noise)
 
     assert np.allclose(iimage, 10 + x*5)
+    assert np.array_equal(msk, imsk)
 
     # make sure noise field was inteprolated
     rng = np.random.RandomState(seed=42)
@@ -102,7 +103,7 @@ def test_interpolate_image_and_noise_bmask():
 
     rng = np.random.RandomState(seed=42)
     noise = rng.normal(size=image.shape)
-    iimage, inoise = interpolate_image_and_noise(
+    iimage, inoise, imsk = interpolate_image_and_noise(
         image=image,
         weight=weight,
         bmask=bmask,
@@ -110,6 +111,7 @@ def test_interpolate_image_and_noise_bmask():
         noise=noise)
 
     assert np.allclose(iimage, 10 + x*5)
+    assert np.array_equal(msk, imsk)
 
     # make sure noise field was inteprolated
     rng = np.random.RandomState(seed=42)
@@ -133,7 +135,7 @@ def test_interpolate_image_and_noise_big_missing():
     msk = (bmask & bad_flags) != 0
     image[msk] = np.nan
 
-    iimage, inoise = interpolate_image_and_noise(
+    iimage, inoise, imsk = interpolate_image_and_noise(
         image=image,
         weight=weight,
         bmask=bmask,
@@ -142,6 +144,7 @@ def test_interpolate_image_and_noise_big_missing():
 
     # interp will be waaay off but shpuld have happened
     assert np.all(np.isfinite(iimage))
+    assert np.array_equal(msk, imsk)
 
     # make sure noise field was inteprolated
     rng = np.random.RandomState(seed=42)
@@ -187,7 +190,7 @@ def test_interpolate_gauss_image(show=False):
     bmask = np.zeros_like(image_unmasked, dtype=np.int32)
     bad_flags = 0
 
-    iimage, inoise = interpolate_image_and_noise(
+    iimage, inoise, imsk = interpolate_image_and_noise(
         image=image_masked,
         weight=weight,
         bmask=bmask,
@@ -196,6 +199,7 @@ def test_interpolate_gauss_image(show=False):
     )
 
     maxdiff = np.abs(image_unmasked-iimage).max()
+    assert np.any(imsk)
 
     if show:
         import images
