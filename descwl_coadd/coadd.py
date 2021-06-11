@@ -517,7 +517,7 @@ def get_coadd_stats_control():
     # for regular images (not psf)
     mask_prop_thresh = {}
     for flagname in FLAGS2CHECK_FOR_COADD:
-        mask_prop_thresh[flagname] = 0.001
+        mask_prop_thresh[flagname] = 0.0
 
     for plane, threshold in mask_prop_thresh.items():
         bit = afw_image.Mask.getMaskPlane(plane)
