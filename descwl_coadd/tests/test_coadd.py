@@ -143,6 +143,8 @@ def test_coadds_mfrac(dither, rotate):
         assert not np.all(coadd.mfrac == 0)
         assert np.max(coadd.mfrac) > 0.1
         assert np.mean(coadd.mfrac) < 0.05
+        assert np.all(coadd.mfrac >= 0)
+        assert np.all(coadd.mfrac <= 1)
 
         if False:
             import matplotlib.pyplot as plt
