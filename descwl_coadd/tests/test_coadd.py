@@ -1,3 +1,4 @@
+import os
 import pytest
 import numpy as np
 
@@ -202,3 +203,75 @@ def test_coadds_noise(dither, rotate):
 
         assert abs(pmed/emed-1) < 1.0e-3
         assert abs(nmed/emed-1) < 1.0e-3
+
+
+@pytest.mark.skipif('CATSIM_DIR' not in os.environ,
+                    reason='CATSIM_DIR not in os.environ')
+@pytest.mark.parametrize('dither', [False, True])
+@pytest.mark.parametrize('rotate', [False, True])
+def test_coadds_bright(dither, rotate):
+    """
+    run trials with stars and make sure we get some BRIGHT
+    and SAT in the coadd mask
+    """
+    rng = np.random.RandomState(85)
+
+    coadd_dim = 101
+    psf_dim = 51
+    band = 'i'
+    epochs_per_band = 1
+
+    ntrial = 10
+
+    somesat = False
+    somebright = False
+    for i in range(ntrial):
+        sim_data = _make_sim(
+            rng=rng, psf_type='gauss', bands=[band],
+            epochs_per_band=epochs_per_band,
+            coadd_dim=coadd_dim, psf_dim=psf_dim,
+            dither=dither, rotate=rotate,
+            stars=True,
+        )
+
+        exps = sim_data['band_data'][band]
+
+        coadd = make_coadd_obs(
+            exps=exps,
+            coadd_wcs=sim_data['coadd_wcs'],
+            coadd_bbox=sim_data['coadd_bbox'],
+            psf_dims=sim_data['psf_dims'],
+            rng=rng,
+            remove_poisson=False,  # no object poisson noise in sims
+        )
+
+        if False:
+            import lsst.afw.display as afw_display
+            # exp = exps[0]
+            # display = afw_display.getDisplay(backend='ds9')
+            # display.mtv(exp)
+            # display.scale('log', 'minmax')
+
+            display = afw_display.getDisplay(backend='ds9')
+            display.mtv(coadd.coadd_exp)
+            display.scale('log', 'minmax')
+
+        mask = coadd.coadd_exp.mask
+        brightflag = mask.getPlaneBitMask('BRIGHT')
+        satflag = mask.getPlaneBitMask('SAT')
+
+        wsat = np.where(mask.array & satflag != 0)
+        wbright = np.where(mask.array & brightflag != 0)
+        assert wbright[0].size >= wsat[0].size
+
+        if wsat[0].size > 0:
+            somesat = True
+
+        if wbright[0].size > 0:
+            somebright = True
+
+        if somesat and somebright:
+            break
+
+    print('i:', i)
+    assert somesat and somebright
