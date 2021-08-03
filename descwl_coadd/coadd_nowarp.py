@@ -104,7 +104,7 @@ def make_coadd_nowarp(
         exp_or_ref=exp, rng=rng, remove_poisson=remove_poisson,
     )
     cen, cen_skypos = get_coadd_center(
-        coadd_wcs=exp.wcs, coadd_bbox=exp.getBBox(),
+        coadd_wcs=exp.getWcs(), coadd_bbox=exp.getBBox(),
     )
 
     psf_exp = get_psf_exp(
