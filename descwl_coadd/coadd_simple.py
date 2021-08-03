@@ -1,98 +1,229 @@
 """
-A container for coadd observations.
+Coadding without warping
 """
 import numpy as np
-import ngmix
-import galsim
+from .coadd import (
+    DEFAULT_LOGLEVEL,
+    CoaddObs,
+    make_logger,
+    check_psf_dims,
+    get_coadd_center,
+    get_coadd_psf_bbox,
+    make_coadd_exposure,
+    make_stacker,
+    get_exp_and_noise,
+    get_psf_exp,
+    get_exp_weight,
+    verify_coadd_edges,
+    flag_bright_as_sat_in_coadd,
+    extract_coadd_psf,
+)
+from esutil.pbar import PBar
 
 
-class MultiBandCoaddsSimple(ngmix.Observation):
+def make_coadd_obs_nowarp(
+    exps, psf_dims, rng, remove_poisson,
+    loglevel=DEFAULT_LOGLEVEL,
+):
     """
-    Coadd a simple set of perfectly aligned images with constant psf and
-    non-varying wcs
+    Make a coadd from the input exposures and store in a CoaddObs, which
+    inherits from ngmix.Observation. See make_coadd for docs on online
+    coadding.
 
     Parameters
     ----------
-    data: list of observations
-        For a single band.  Should have image, weight, noise, wcs attributes,
-        as well as get_psf method.  For example see the simple sim from
-        descwl_shear_testing
+    exps: list
+        Either a list of exposures or a list of DeferredDatasetHandle
+    psf_dims: tuple
+        The dimensions of the psf
+    rng: np.random.RandomState
+        The random number generator for making noise images
+    remove_poisson: bool
+        If True, remove the poisson noise from the variance
+        estimate.
+    loglevel : str, optional
+        The logging level. Default is 'info'.
+
+    Returns
+    -------
+    CoaddObs (inherits from ngmix.Observation)
     """
-    def __init__(self, *, data):
-        self._data = data
-        self._make_coadd()
 
-    def _make_coadd(self):
-        import ngmix
+    coadd_data = make_coadd_nowarp(
+        exps=exps,
+        psf_dims=psf_dims,
+        rng=rng, remove_poisson=remove_poisson,
+        loglevel=loglevel,
+    )
+    if coadd_data is None:
+        return None
 
-        ntot = 0
-        wsum = 0.0
-        for band in self._data:
-            bdata = self._data[band]
-            for epoch_ind, se_obs in enumerate(bdata):
+    return CoaddObs(
+        coadd_exp=coadd_data["coadd_exp"],
+        coadd_noise_exp=coadd_data["coadd_noise_exp"],
+        coadd_psf_exp=coadd_data["coadd_psf_exp"],
+        coadd_mfrac_exp=coadd_data["coadd_mfrac_exp"],
+        ormask=coadd_data['ormask'],
+        loglevel=loglevel,
+    )
 
-                cen = (np.array(se_obs.image.array.shape)-1)/2
-                y, x = cen
 
-                wt = np.median(se_obs.weight.array)
-                wsum += wt
+def make_coadd_nowarp(
+    exps, psf_dims, rng, remove_poisson,
+    loglevel=DEFAULT_LOGLEVEL,
+):
+    """
+    make a coadd from the input exposures, working in "online mode",
+    adding each exposure separately.  This saves memory when
+    the exposures are being read from disk
 
-                if ntot == 0:
+    Parameters
+    ----------
+    exps: list
+        Either a list of exposures or a list of DeferredDatasetHandle
+    psf_dims: tuple
+        The dimensions of the psf
+    rng: np.random.RandomState
+        The random number generator for making noise images
+    remove_poisson: bool
+        If True, remove the poisson noise from the variance
+        estimate.
+    loglevel : str, optional
+        The logging level. Default is 'info'.
 
-                    image = se_obs.image.array.copy()*wt
-                    noise = se_obs.noise.array.copy()*wt
+    Returns
+    -------
+    coadd_data : dict
+        A dict with keys and values:
 
-                    weight = se_obs.weight.array.copy()
+            coadd_exp : ExposureF
+                The coadded image.
+            coadd_noise_exp : ExposureF
+                The coadded noise image.
+            coadd_psf_exp : ExposureF
+                The coadded PSF image.
+            coadd_mfrac_exp : ExposureF
+                The fraction of SE images interpolated in each coadd pixel.
+    """
 
-                    psf_image = se_obs.get_psf(x, y, center_psf=True).array
-                    psf_err = psf_image.max()*0.0001
-                    psf_weight = psf_image*0 + 1.0/psf_err**2
-                    psf_cen = (np.array(psf_image.shape)-1.0)/2.0
+    logger = make_logger('coadd', loglevel)
+    check_psf_dims(psf_dims)
 
-                    pos = galsim.PositionD(x=x, y=y)
-                    wjac = se_obs.wcs.jacobian(image_pos=pos)
-                    wscale, wshear, wtheta, wflip = wjac.getDecomposition()
-                    jac = ngmix.Jacobian(
-                        x=x,
-                        y=y,
-                        dudx=wjac.dudx,
-                        dudy=wjac.dudy,
-                        dvdx=wjac.dvdx,
-                        dvdy=wjac.dvdy,
-                    )
+    example_exp = exps[0]
+    coadd_wcs = example_exp.wcs
+    coadd_bbox = example_exp.getBBox()
 
-                    psf_jac = ngmix.Jacobian(
-                        x=psf_cen[1],
-                        y=psf_cen[0],
-                        dudx=wjac.dudx,
-                        dudy=wjac.dudy,
-                        dvdx=wjac.dvdx,
-                        dvdy=wjac.dvdy,
-                    )
+    # sky center of this coadd within bbox
+    coadd_cen, coadd_cen_skypos = get_coadd_center(
+        coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
+    )
 
-                else:
-                    image += se_obs.image.array[:, :]*wt
-                    noise += se_obs.noise.array[:, :]*wt
-                    weight[:, :] += se_obs.weight.array[:, :]
+    coadd_psf_bbox = get_coadd_psf_bbox(
+        x=coadd_cen.x, y=coadd_cen.y, dim=psf_dims[0],
+    )
+    coadd_psf_wcs = coadd_wcs
 
-                ntot += 1
+    # separately stack data, noise, and psf
+    coadd_exp = make_coadd_exposure(coadd_bbox, coadd_wcs)
+    coadd_noise_exp = make_coadd_exposure(coadd_bbox, coadd_wcs)
+    coadd_psf_exp = make_coadd_exposure(coadd_psf_bbox, coadd_psf_wcs)
+    coadd_mfrac_exp = make_coadd_exposure(coadd_bbox, coadd_wcs)
 
-        image *= 1.0/wsum
-        noise *= 1.0/wsum
+    coadd_dims = example_exp.image.array.shape
+    stacker = make_stacker(coadd_dims=coadd_dims)
+    noise_stacker = make_stacker(coadd_dims=coadd_dims)
+    psf_stacker = make_stacker(coadd_dims=psf_dims)
+    mfrac_stacker = make_stacker(coadd_dims=coadd_dims)
 
-        psf_obs = ngmix.Observation(
-            image=psf_image,
-            weight=psf_weight,
-            jacobian=psf_jac,
+    # will zip these with the exposures to add
+    stackers = [stacker, noise_stacker, psf_stacker, mfrac_stacker]
+    bboxes = [coadd_bbox, coadd_bbox, coadd_psf_bbox, coadd_bbox]
+
+    # PSF will generally have NO_DATA in warp as we tend to use the same psf
+    # stamp size for input and output psf and just zero out wherever there is
+    # no data
+
+    verify = [True, True, False, True]
+
+    nuse = 0
+    logger.info('adding exposures')
+
+    ormask = np.zeros(coadd_dims, dtype='i4')
+    ormasks = [ormask, None, None, None]
+
+    for exp_or_ref in PBar(exps):
+        exp, noise_exp, var, mfrac_exp = get_exp_and_noise(
+            exp_or_ref=exp_or_ref, rng=rng, remove_poisson=remove_poisson,
+        )
+        if exp is None:
+            continue
+
+        psf_exp = get_psf_exp(
+            exp=exp,
+            coadd_cen_skypos=coadd_cen_skypos,
+            var=var,
         )
 
-        super().__init__(
-            image=image,
-            noise=noise,
-            weight=weight,
-            bmask=np.zeros(image.shape, dtype='i4'),
-            ormask=np.zeros(image.shape, dtype='i4'),
-            jacobian=jac,
-            psf=psf_obs,
-            store_pixels=False,
-        )
+        assert psf_exp.variance.array[0, 0] == noise_exp.variance.array[0, 0]
+
+        weight = get_exp_weight(exp)
+
+        # order must match stackers, bboxes
+        exps2add = [exp, noise_exp, psf_exp, mfrac_exp]
+
+        for _stacker, _exp, _bbox, _verify, _ormask in zip(
+            stackers, exps2add, bboxes, verify, ormasks
+        ):
+            add_nowarp(_stacker, _exp, _bbox, weight, _verify, _ormask)
+
+        nuse += 1
+
+    if nuse == 0:
+        return None
+
+    stacker.fill_stacked_masked_image(coadd_exp.maskedImage)
+    noise_stacker.fill_stacked_masked_image(coadd_noise_exp.maskedImage)
+    psf_stacker.fill_stacked_masked_image(coadd_psf_exp.maskedImage)
+    mfrac_stacker.fill_stacked_masked_image(coadd_mfrac_exp.maskedImage)
+
+    verify_coadd_edges(coadd_exp)
+    verify_coadd_edges(coadd_noise_exp)
+
+    flag_bright_as_sat_in_coadd(coadd_exp, ormask)
+    flag_bright_as_sat_in_coadd(coadd_noise_exp, ormask)
+
+    logger.info('making psf')
+    psf = extract_coadd_psf(coadd_psf_exp, logger)
+    coadd_exp.setPsf(psf)
+    coadd_noise_exp.setPsf(psf)
+
+    return dict(
+        coadd_exp=coadd_exp,
+        coadd_noise_exp=coadd_noise_exp,
+        coadd_psf_exp=coadd_psf_exp,
+        coadd_mfrac_exp=coadd_mfrac_exp,
+        ormask=ormask,
+    )
+
+
+def add_nowarp(stacker, exp, weight, ormask):
+    """
+    Add the exposure
+
+    Parameters
+    ----------
+    stacker: AccumulatorMeanStack
+        A stacker, type
+        lsst.pipe.tasks.accumulatorMeanStack.AccumulatorMeanStack
+    exp: afw_image.ExposureF
+        The exposure to add
+    weight: float
+        Weight for this image in the stack
+    ormask: array
+        This will be or'ed with the warped mask
+    """
+
+    if ormask is not None:
+        ormask |= exp.mask.array
+
+    stacker.add_masked_image(exp, weight=weight)
