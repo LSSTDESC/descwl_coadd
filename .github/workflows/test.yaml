@@ -11,7 +11,9 @@ jobs:
       name: tests
       strategy:
           matrix:
-            pyver: [3.8]
+            # specific version 3.8.8 is here to fix solver error w/ sqlite 
+            # see https://lsstc.slack.com/archives/C2K9RHYTV/p1628567486002200
+            pyver: [3.8.8]
 
       runs-on: "ubuntu-latest"
 
