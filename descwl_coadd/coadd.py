@@ -10,12 +10,10 @@ TODO:
 from numba import njit
 import numpy as np
 import ngmix
+
 import lsst.afw.math as afw_math
 import lsst.afw.image as afw_image
-from lsst.pipe.tasks.accumulatorMeanStack import (
-    AccumulatorMeanStack,
-    stats_ctrl_to_threshold_dict,
-)
+from lsst.meas.algorithms import AccumulatorMeanStack
 from lsst.pipe.tasks.assembleCoadd import AssembleCoaddTask
 from lsst.daf.butler import DeferredDatasetHandle
 import lsst.log
@@ -482,7 +480,7 @@ def make_stacker(coadd_dims):
 
     cefiv = stats_ctrl.getCalcErrorFromInputVariance()
 
-    mask_threshold_dict = stats_ctrl_to_threshold_dict(stats_ctrl)
+    mask_threshold_dict = AccumulatorMeanStack.stats_ctrl_to_threshold_dict(stats_ctrl)
 
     return AccumulatorMeanStack(
         shape=coadd_dims,

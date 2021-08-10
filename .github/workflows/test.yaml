@@ -11,7 +11,10 @@ jobs:
       name: tests
       strategy:
           matrix:
-            pyver: [3.8]
+            # specific version 3.8.8 is here to fix solver error w/ sqlite 
+            # see https://lsstc.slack.com/archives/C2K9RHYTV/p1628567486002200
+            # when python 3.9 is in use, set this to 3.9
+            pyver: [3.8.8]
 
       runs-on: "ubuntu-latest"
 
@@ -43,27 +46,7 @@ jobs:
                   lsstdesc-weaklensingdeblending \
                   fitsio
 
-                # remove this when ngmix 2.0 comes out
-                conda uninstall ngmix --force
-                pip install --no-deps git+https://github.com/esheldon/ngmix.git
-
                 pip install --no-deps git+https://github.com/LSSTDESC/descwl-shear-sims.git
-
-                git clone --branch u/erykoff/onlinecoadd https://github.com/lsst/pipe_tasks.git /tmp/pipe_tasks
-
-          - name: second step to reactivate eups
-            shell: bash -l {0}
-            run: |
-                env
-
-                setup -j -r /tmp/pipe_tasks
-
-                pushd /tmp/pipe_tasks
-                # this might partly fail but that's ok
-                scons || echo "ok scons fails"
-                popd
-
-                pip install --no-deps -e .
 
           - name: Lint with flake8
             shell: bash -l {0}
@@ -73,5 +56,4 @@ jobs:
           - name: Run pytest
             shell: bash -l {0}
             run: |
-                setup -j -r /tmp/pipe_tasks
                 pytest -vv descwl_coadd
