@@ -330,6 +330,7 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
     a corresponding noise exposure
 
     TODO move interpolating BRIGHT into metadetect or mdet-lsst-sim
+    Currently adding that plane if it doesn't exist
 
     Parameters
     ----------
@@ -346,6 +347,10 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
         exp = exp_or_ref.get()
     else:
         exp = exp_or_ref
+
+    mdict = exp.mask.getMaskPlaneDict()
+    if 'BRIGHT' not in mdict:
+        coadd_exp.mask.addMaskPlane("BRIGHT")
 
     var = exp.variance.array
     weight = 1/var
