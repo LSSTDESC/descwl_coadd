@@ -350,7 +350,8 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
 
     mdict = exp.mask.getMaskPlaneDict()
     if 'BRIGHT' not in mdict:
-        coadd_exp.mask.addMaskPlane("BRIGHT")
+        # this adds it globally too
+        exp.mask.addMaskPlane("BRIGHT")
 
     var = exp.variance.array
     weight = 1/var
