@@ -364,12 +364,12 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
     )
 
     # noise and image will have zeros in EDGE
-    zero_bits(
-        image=exp.image.array,
-        noise=noise_exp.image.array,
-        mask=exp.mask.array,
-        flags=afw_image.Mask.getPlaneBitMask('EDGE'),
-    )
+    # zero_bits(
+    #     image=exp.image.array,
+    #     noise=noise_exp.image.array,
+    #     mask=exp.mask.array,
+    #     flags=afw_image.Mask.getPlaneBitMask('EDGE'),
+    # )
 
     flags2interp = exp.mask.getPlaneBitMask(FLAGS2INTERP)
     iimage, inoise, mfrac_msk = interpolate_image_and_noise(
