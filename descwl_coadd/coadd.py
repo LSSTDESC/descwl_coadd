@@ -592,8 +592,11 @@ def get_noise_exp(exp, rng, remove_poisson):
     -------
     noise exposure
     """
+
+    noise_exp = afw_image.ExposureF(exp, deep=True)
+
     signal = exp.image.array
-    variance = exp.variance.array.copy()
+    variance = exp.variance.array
 
     use = np.where(np.isfinite(variance) & np.isfinite(signal))
 
@@ -611,19 +614,8 @@ def get_noise_exp(exp, rng, remove_poisson):
 
     noise_image = rng.normal(scale=np.sqrt(var), size=signal.shape)
 
-    ny, nx = signal.shape
-    nmimage = afw_image.MaskedImageF(width=nx, height=ny)
-    assert nmimage.image.array.shape == (ny, nx)
-
-    nmimage.image.array[:, :] = noise_image
-    nmimage.variance.array[:, :] = var
-    nmimage.mask.array[:, :] = exp.mask.array[:, :]
-
-    noise_exp = afw_image.ExposureF(nmimage)
-    noise_exp.setPsf(exp.getPsf())
-    noise_exp.setWcs(exp.getWcs())
-    noise_exp.setFilterLabel(exp.getFilterLabel())
-    noise_exp.setDetector(exp.getDetector())
+    noise_exp.image.array[:, :] = noise_image
+    noise_exp.variance.array[:, :] = var
 
     return noise_exp, var
 
