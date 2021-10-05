@@ -135,6 +135,8 @@ def make_coadd(
     """
 
     logger = make_logger('coadd', loglevel)
+    filter_label = exps[0].getFilterLabel()
+
     check_psf_dims(psf_dims)
 
     # sky center of this coadd within bbox
@@ -148,10 +150,10 @@ def make_coadd(
     coadd_psf_wcs = coadd_wcs
 
     # separately stack data, noise, and psf
-    coadd_exp = make_coadd_exposure(coadd_bbox, coadd_wcs)
-    coadd_noise_exp = make_coadd_exposure(coadd_bbox, coadd_wcs)
-    coadd_psf_exp = make_coadd_exposure(coadd_psf_bbox, coadd_psf_wcs)
-    coadd_mfrac_exp = make_coadd_exposure(coadd_bbox, coadd_wcs)
+    coadd_exp = make_coadd_exposure(coadd_bbox, coadd_wcs, filter_label)
+    coadd_noise_exp = make_coadd_exposure(coadd_bbox, coadd_wcs, filter_label)
+    coadd_psf_exp = make_coadd_exposure(coadd_psf_bbox, coadd_psf_wcs, filter_label)
+    coadd_mfrac_exp = make_coadd_exposure(coadd_bbox, coadd_wcs, filter_label)
 
     coadd_dims = coadd_exp.image.array.shape
     stacker = make_stacker(coadd_dims=coadd_dims)
@@ -267,7 +269,7 @@ def verify_coadd_edges(exp):
         raise ValueError('found EDGE in coadd')
 
 
-def make_coadd_exposure(coadd_bbox, coadd_wcs):
+def make_coadd_exposure(coadd_bbox, coadd_wcs, filter_label):
     """
     make a coadd exposure with extra mask planes for
     rejected, clipped, sensor_edge
@@ -278,12 +280,15 @@ def make_coadd_exposure(coadd_bbox, coadd_wcs):
         the bbox for the coadd exposure
     coads_wcs: DM wcs
         The wcs for the coadd exposure
+    filter_label: FilterLabel
+        Filter label to set
 
     Returns
     -------
     ExpsureF
     """
     coadd_exp = afw_image.ExposureF(coadd_bbox, coadd_wcs)
+    coadd_exp.setFilterLabel(filter_label)
 
     # these planes are added by DM, add them here for consistency
     coadd_exp.mask.addMaskPlane("REJECTED")
