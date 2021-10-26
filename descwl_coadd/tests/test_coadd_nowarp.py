@@ -6,7 +6,7 @@ from descwl_shear_sims.sim import make_sim
 from descwl_shear_sims.psfs import make_fixed_psf, make_ps_psf
 from descwl_shear_sims.stars import StarCatalog
 
-from ..coadd_nowarp import make_coadd_obs_nowarp
+from descwl_coadd.coadd_nowarp import make_coadd_obs_nowarp
 from descwl_shear_sims.galaxies import make_galaxy_catalog
 
 

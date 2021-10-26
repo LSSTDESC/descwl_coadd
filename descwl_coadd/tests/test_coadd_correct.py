@@ -8,7 +8,7 @@ import lsst.geom as geom
 from descwl_shear_sims.psfs import make_dm_psf
 from descwl_shear_sims.wcs import make_dm_wcs
 
-from ..coadd import make_coadd_obs
+from descwl_coadd.coadd import make_coadd_obs
 
 
 def make_exp(gsimage, bmask, noise, galsim_wcs, galsim_psf, psf_dim):

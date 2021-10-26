@@ -1,6 +1,8 @@
 import numpy as np
 
-from ..interp import replace_flag_with_noise, interpolate_image_and_noise
+from descwl_coadd.interp import (
+    replace_flag_with_noise, interpolate_image_and_noise,
+)
 
 
 def test_replace_bright_with_noise():

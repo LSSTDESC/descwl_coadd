@@ -1,3 +1,4 @@
+import sys
 import os
 import pytest
 import numpy as np
@@ -6,8 +7,11 @@ from descwl_shear_sims.sim import make_sim, get_se_dim
 from descwl_shear_sims.psfs import make_fixed_psf, make_ps_psf
 from descwl_shear_sims.stars import StarCatalog
 
-from ..coadd import make_coadd_obs
+from descwl_coadd.coadd import make_coadd_obs, make_coadd
 from descwl_shear_sims.galaxies import make_galaxy_catalog
+import logging
+
+logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
 
 def _make_sim(
@@ -18,6 +22,7 @@ def _make_sim(
     rotate=True,
     bands=['i', 'z'],
     coadd_dim=101,
+    se_dim=None,
     psf_dim=51,
     bad_columns=False,
 ):
@@ -32,8 +37,10 @@ def _make_sim(
         gal_config={'mag': 22},
     )
 
-    if psf_type == "ps":
+    if se_dim is None:
         se_dim = get_se_dim(coadd_dim=coadd_dim)
+
+    if psf_type == "ps":
         psf = make_ps_psf(rng=rng, dim=se_dim)
     else:
         psf = make_fixed_psf(psf_type=psf_type)
@@ -53,6 +60,7 @@ def _make_sim(
         galaxy_catalog=galaxy_catalog,
         star_catalog=star_catalog,
         coadd_dim=coadd_dim,
+        se_dim=se_dim,
         psf_dim=psf_dim,
         epochs_per_band=epochs_per_band,
         g1=0.02,
@@ -60,7 +68,7 @@ def _make_sim(
         bands=bands,
         psf=psf,
         dither=dither,
-        rotate=dither,
+        rotate=rotate,
         bad_columns=bad_columns,
     )
 
@@ -215,6 +223,55 @@ def test_coadds_noise(dither, rotate):
         assert abs(nmed/emed-1) < 1.0e-3
 
 
+@pytest.mark.parametrize('rotate', [False, True])
+def test_coadds_boundary(rotate):
+    ntrial = 3
+    rng = np.random.RandomState(55)
+
+    coadd_dim = 101
+    se_dim = 111
+    psf_dim = 51
+
+    bands = ['i']
+    epochs_per_band = 3
+
+    if not rotate:
+        ok = True
+    else:
+        ok = False
+
+    for i in range(ntrial):
+        sim_data = _make_sim(
+            rng=rng, psf_type='gauss', bands=bands,
+            coadd_dim=coadd_dim,
+            se_dim=se_dim,
+            psf_dim=psf_dim,
+            rotate=rotate,
+            epochs_per_band=epochs_per_band,
+        )
+
+        # coadd each band separately
+        exps = sim_data['band_data'][bands[0]]
+
+        coadd_dict = make_coadd(
+            exps=exps,
+            coadd_wcs=sim_data['coadd_wcs'],
+            coadd_bbox=sim_data['coadd_bbox'],
+            psf_dims=sim_data['psf_dims'],
+            rng=rng,
+            remove_poisson=False,  # no object poisson noise in sims
+        )
+
+        if not rotate:
+            assert coadd_dict['nkept'] == epochs_per_band
+        else:
+            if coadd_dict is None or coadd_dict['nkept'] != epochs_per_band:
+                ok = True
+            break
+
+    assert ok
+
+
 @pytest.mark.skipif('CATSIM_DIR' not in os.environ,
                     reason='CATSIM_DIR not in os.environ')
 @pytest.mark.parametrize('dither', [False, True])
@@ -285,3 +342,7 @@ def test_coadds_bright(dither, rotate):
 
     print('i:', i)
     assert somesat and somebright
+
+
+if __name__ == '__main__':
+    test_coadds_boundary(rotate=True)

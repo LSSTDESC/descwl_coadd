@@ -3,7 +3,7 @@ import numpy as np
 from descwl_shear_sims.sim import make_sim
 from descwl_shear_sims.galaxies import make_galaxy_catalog
 from descwl_shear_sims.psfs import make_fixed_psf
-from ..coadd import make_coadd_obs
+from descwl_coadd.coadd import make_coadd_obs
 
 
 def test_cosmics():
