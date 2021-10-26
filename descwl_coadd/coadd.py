@@ -16,6 +16,9 @@ from lsst.afw.math import FixedKernel
 from . import vis
 from .interp import interpolate_image_and_noise
 from esutil.pbar import PBar
+import logging
+
+LOG = logging.getLogger('descwl_coadd.coadd')
 
 DEFAULT_INTERP = 'lanczos3'
 DEFAULT_LOGLEVEL = 'info'
@@ -30,6 +33,9 @@ FLAGS2INTERP = ('BAD', 'CR', 'SAT', 'BRIGHT')
 # array for BRIGHT
 
 FLAGS2CHECK_FOR_COADD = ('EDGE', )
+
+BOUNDARY_BIT_NAME = 'BOUNDARY'
+BOUNDARY_SIZE = 3
 
 
 def make_coadd_obs(
@@ -61,7 +67,8 @@ def make_coadd_obs(
 
     Returns
     -------
-    CoaddObs (inherits from ngmix.Observation)
+    CoaddObs (inherits from ngmix.Observation) or None if no exposures
+    were deemed valid
     """
 
     coadd_data = make_coadd(
@@ -70,7 +77,8 @@ def make_coadd_obs(
         rng=rng, remove_poisson=remove_poisson,
         loglevel=loglevel,
     )
-    if coadd_data is None:
+
+    if coadd_data['nkept'] == 0:
         return None
 
     return CoaddObs(
@@ -115,6 +123,8 @@ def make_coadd(
     coadd_data : dict
         A dict with keys and values:
 
+            nkept: int
+                Number of exposures deemed valid for coadding
             coadd_exp : ExposureF
                 The coadded image.
             coadd_noise_exp : ExposureF
@@ -174,7 +184,7 @@ def make_coadd(
 
     verify = [True, True, False, True]
 
-    nuse = 0
+    nkept = 0
     logger.info('warping and adding exposures')
 
     ormask = np.zeros(coadd_dims, dtype='i4')
@@ -200,24 +210,31 @@ def make_coadd(
         # order must match stackers, wcss, bboxes
         exps2add = [exp, noise_exp, psf_exp, mfrac_exp]
 
-        for _stacker, _exp, _wcs, _bbox, _warper, _verify, _ormask in zip(
-            stackers, exps2add, wcss, bboxes, warpers, verify, ormasks
-        ):
-            warp_and_add(
-                _stacker, _warper, _exp, _wcs, _bbox, weight, _verify, _ormask,
-            )
-        nuse += 1
+        warps = get_warps(exps2add, wcss, bboxes, warpers)
 
-    if nuse == 0:
-        return None
+        check_ok = [
+            verify_boundary(_warp)
+            for _warp, _verify in zip(warps, verify) if _verify
+        ]
+        print('check_ok:', check_ok)
+
+        if all(check_ok):
+            nkept += 1
+            add_all(stackers, warps, ormasks, weight)
+
+    # TODO switch to returning {'nkept': 0}
+    if nkept == 0:
+        return {'nkept': nkept}
 
     stacker.fill_stacked_masked_image(coadd_exp.maskedImage)
     noise_stacker.fill_stacked_masked_image(coadd_noise_exp.maskedImage)
     psf_stacker.fill_stacked_masked_image(coadd_psf_exp.maskedImage)
     mfrac_stacker.fill_stacked_masked_image(coadd_mfrac_exp.maskedImage)
 
-    verify_coadd_edges(coadd_exp)
-    verify_coadd_edges(coadd_noise_exp)
+    if not verify_boundary(coadd_exp):
+        raise RuntimeError('boundary pixels found in coadd')
+    if not verify_boundary(coadd_noise_exp):
+        raise RuntimeError('boundary pixels found in noise coadd')
 
     flag_bright_as_sat_in_coadd(coadd_exp, ormask)
     flag_bright_as_sat_in_coadd(coadd_noise_exp, ormask)
@@ -228,6 +245,7 @@ def make_coadd(
     coadd_noise_exp.setPsf(psf)
 
     return dict(
+        nkept=nkept,
         coadd_exp=coadd_exp,
         coadd_noise_exp=coadd_noise_exp,
         coadd_psf_exp=coadd_psf_exp,
@@ -236,18 +254,49 @@ def make_coadd(
     )
 
 
-def verify_warp_exp(exp):
+def add_boundary_bit(exp):
     """
-    ensure no EDGE were included in the coadd
-
-    raises ValueError
-
-    TODO remove EDGE, and invent something to avoid edge distortions
+    add a bit to the boundary pixels; if this shows up in the warp we will not
+    use it
     """
-    for flag in ('EDGE', 'NO_DATA'):
-        flagval = exp.mask.getPlaneBitMask(flag)
-        if np.any(exp.mask.array & flagval != 0):
-            raise ValueError('found %s in warp' % flag)
+    exp.mask.addMaskPlane(BOUNDARY_BIT_NAME)
+    val = exp.mask.getPlaneBitMask(BOUNDARY_BIT_NAME)
+
+    marr = exp.mask.array
+    marr[:BOUNDARY_SIZE, :] |= val
+    marr[-BOUNDARY_SIZE:, :] |= val
+    marr[:, :BOUNDARY_SIZE] |= val
+    marr[:, -BOUNDARY_SIZE:] |= val
+
+    if False:
+        vis.show_image_and_mask(exp)
+
+
+def verify_boundary(exp):
+    """
+    check to see if boundary pixels were included in the xp
+
+    This might happen due to imprecision in the bounding box checks
+
+    Parameters
+    ----------
+    exp: afw.image.ExposureF
+        The exposure to check
+
+    Returns
+    -------
+    True if no boundary pixels were found
+    """
+
+    flagval = exp.mask.getPlaneBitMask(BOUNDARY_BIT_NAME)
+    if np.any(exp.mask.array & flagval != 0):
+        # TODO keep track of what gets left out
+        LOG.info('skipping warp that includes boundary pixels')
+        if False:
+            vis.show_image_and_mask(exp)
+        return False
+    else:
+        return True
 
 
 def verify_coadd_edges(exp):
@@ -386,6 +435,9 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
 
     mfrac_exp = make_mfrac_exp(mfrac_msk=mfrac_msk, exp=exp)
 
+    add_boundary_bit(exp)
+    add_boundary_bit(noise_exp)
+
     return exp, noise_exp, medvar, mfrac_exp
 
 
@@ -421,10 +473,15 @@ def make_mfrac_exp(*, mfrac_msk, exp):
     return mfrac_exp
 
 
-def warp_and_add(
-    stacker, warper, exp, coadd_wcs, coadd_bbox, weight, verify,
-    ormask,
-):
+def add_all(stackers, warps, ormasks, weight):
+    """
+    run do_add on all inputs
+    """
+    for _stacker, _warp, _ormask in zip(stackers, warps, ormasks):
+        do_add(_stacker, _warp, weight, _ormask)
+
+
+def do_add(stacker, warp, weight, ormask):
     """
     warp the exposure and add it
 
@@ -433,6 +490,54 @@ def warp_and_add(
     stacker: AccumulatorMeanStack
         A stacker, type
         lsst.pipe.tasks.accumulatorMeanStack.AccumulatorMeanStack
+    warp: afw_image.ExposureF
+        The exposure to warp and add
+    weight: float
+        Weight for this image in the stack
+    ormask: array
+        This will be or'ed with the warped mask
+    """
+
+    # TODO configure stacker to do this
+    if ormask is not None:
+        ormask |= warp.mask.array
+
+    stacker.add_masked_image(warp, weight=weight)
+
+
+def get_warps(exps, wcss, bboxes, warpers):
+    """
+    get a list of all warps for the input
+
+    Parameters
+    ----------
+    exps: [ExposureF]
+        List of exposures to warp
+    wcss: [wcs]
+        List of wcs
+    bboxes: [lsst.geom.Box2I]
+        List of bounding boxes
+    warpers: [afw_math.Warper]
+        List of warpers
+
+    Returns
+    -------
+    waprs: [ExposureF]
+        List of warped exposures
+    """
+    warps = []
+    for _exp, _wcs, _bbox, _warper in zip(exps, wcss, bboxes, warpers):
+        warps.append(get_warp(_warper, _exp, _wcs, _bbox))
+
+    return warps
+
+
+def get_warp(warper, exp, coadd_wcs, coadd_bbox):
+    """
+    warp the exposure and add it
+
+    Parameters
+    ----------
     warper: afw_math.Warper
         The warper
     exp: afw_image.ExposureF
@@ -441,10 +546,6 @@ def warp_and_add(
         The target wcs
     coadd_bbox: geom.Box2I
         The bounding box for the coadd within larger wcs system
-    weight: float
-        Weight for this image in the stack
-    ormask: array
-        This will be or'ed with the warped mask
     """
     wexp = warper.warpExposure(
         coadd_wcs,
@@ -452,15 +553,7 @@ def warp_and_add(
         maxBBox=exp.getBBox(),
         destBBox=coadd_bbox,
     )
-
-    if verify:
-        verify_warp_exp(wexp)
-
-    # TODO configure stacker to do this
-    if ormask is not None:
-        ormask |= wexp.mask.array
-
-    stacker.add_masked_image(wexp, weight=weight)
+    return wexp
 
 
 def make_stacker(coadd_dims):
