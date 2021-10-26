@@ -251,6 +251,8 @@ def verify_warp_exp(exp):
     ensure no EDGE were included in the coadd
 
     raises ValueError
+
+    TODO remove EDGE, and invent something to avoid edge distortions
     """
     for flag in ('EDGE', 'NO_DATA'):
         flagval = exp.mask.getPlaneBitMask(flag)
@@ -263,6 +265,13 @@ def verify_coadd_edges(exp):
     ensure no EDGE were included in the coadd
 
     raises ValueError
+
+    TODO do three-pixel boundary with new bit and check just that
+
+    but in real data we will want to exclude distorted edges in this way
+
+    Yusra says something fancy happens before warping to remove
+    EDGE
     """
     flagval = exp.mask.getPlaneBitMask('EDGE')
     if np.any(exp.mask.array & flagval != 0):
@@ -311,6 +320,8 @@ def extract_coadd_psf(coadd_psf_exp, logger):
     Returns
     -------
     KernelPsf
+
+    TODO maybe normalize
     """
     psf_image = coadd_psf_exp.image.array
 
@@ -364,6 +375,7 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
     # we can now use BRIGHT directly as it is in our mask plane
     # flag_bright_as_sat(exp)
 
+    # TODO rename var
     noise_exp, var = get_noise_exp(
         exp=exp, rng=rng, remove_poisson=remove_poisson,
     )
@@ -454,6 +466,7 @@ def warp_and_add(
     if verify:
         verify_warp_exp(wexp)
 
+    # TODO configure stacker to do this
     if ormask is not None:
         ormask |= wexp.mask.array
 
@@ -541,6 +554,7 @@ def get_exp_weight(exp):
     -------
     afw_math.StatisticsControl
     """
+    # TODO get this from the variance plane
     # Compute variance weight
     stats_ctrl = afw_math.StatisticsControl()
     stats_ctrl.setCalcErrorFromInputVariance(True)
@@ -606,6 +620,7 @@ def get_noise_exp(exp, rng, remove_poisson):
     use = np.where(np.isfinite(variance) & np.isfinite(signal))
 
     if remove_poisson:
+        # TODO: getGain may not work for a calexp
         gains = [
             amp.getGain() for amp in exp.getDetector().getAmplifiers()
         ]
@@ -709,6 +724,8 @@ def get_psf_bbox(pos, dim):
 def get_coadd_psf_bbox(x, y, dim):
     """
     suggested by Matt Becker
+
+    TODO revisit
     """
     xpix = int(x)
     ypix = int(y)
