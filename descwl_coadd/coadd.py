@@ -181,7 +181,7 @@ def make_coadd(
     ormasks = [ormask, None, None, None]
 
     for exp_or_ref in PBar(exps):
-        exp, noise_exp, var, mfrac_exp = get_exp_and_noise(
+        exp, noise_exp, medvar, mfrac_exp = get_exp_and_noise(
             exp_or_ref=exp_or_ref, rng=rng, remove_poisson=remove_poisson,
         )
         if exp is None:
@@ -190,7 +190,7 @@ def make_coadd(
         psf_exp = get_psf_exp(
             exp=exp,
             coadd_cen_skypos=coadd_cen_skypos,
-            var=var,
+            var=medvar,
         )
 
         assert psf_exp.variance.array[0, 0] == noise_exp.variance.array[0, 0]
@@ -366,7 +366,7 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
     # flag_bright_as_sat(exp)
 
     # TODO rename var
-    noise_exp, var = get_noise_exp(
+    noise_exp, medvar = get_noise_exp(
         exp=exp, rng=rng, remove_poisson=remove_poisson,
     )
 
@@ -386,7 +386,7 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
 
     mfrac_exp = make_mfrac_exp(mfrac_msk=mfrac_msk, exp=exp)
 
-    return exp, noise_exp, var, mfrac_exp
+    return exp, noise_exp, medvar, mfrac_exp
 
 
 def make_mfrac_exp(*, mfrac_msk, exp):
