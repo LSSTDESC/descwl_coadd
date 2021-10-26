@@ -723,7 +723,7 @@ def get_psf_exp(
 
 def get_psf_bbox(pos, dim):
     """
-    TODO sprint week revisit along with get_coadd_psf_bbox.  Jim?
+    TODO sprint week revisit along with get_coadd_psf_bbox.  Eli
 
     copied from https://github.com/beckermr/pizza-cutter/blob/
         66b9e443f840798996b659a4f6ce59930681c776/pizza_cutter/des_pizza_cutter/_se_image.py#L708
@@ -760,7 +760,7 @@ def get_coadd_psf_bbox(x, y, dim):
     """
     suggested by Matt Becker
 
-    TODO sprint week revisit along with get_psf_bbox Jim?
+    TODO sprint week revisit along with get_psf_bbox Eli
     """
     xpix = int(x)
     ypix = int(y)
