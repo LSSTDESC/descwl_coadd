@@ -1,12 +1,3 @@
-"""
-TODO:
-    Currently we are checking the warps don't have EDGE and NO_DATA.
-
-    But warps for HSC this can be set for chips near the edge
-    of the focal plane
-
-    We may want to just skip such images rather than fail
-"""
 from numba import njit
 import numpy as np
 import ngmix
@@ -320,8 +311,6 @@ def extract_coadd_psf(coadd_psf_exp, logger):
     Returns
     -------
     KernelPsf
-
-    TODO maybe normalize
     """
     psf_image = coadd_psf_exp.image.array
 
@@ -333,10 +322,11 @@ def extract_coadd_psf(coadd_psf_exp, logger):
         logger.info('zeroing %d bad psf pixels' % wbad[0].size)
         psf_image[wbad] = 0.0
 
+    psf_image = psf_image.astype(float)
+    psf_image *= 1/psf_image.sum()
+
     return KernelPsf(
-        FixedKernel(
-            afw_image.ImageD(psf_image.astype(float))
-        )
+        FixedKernel(afw_image.ImageD(psf_image))
     )
 
 
