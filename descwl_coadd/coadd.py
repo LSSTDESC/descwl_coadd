@@ -195,7 +195,7 @@ def make_coadd(
 
         assert psf_exp.variance.array[0, 0] == noise_exp.variance.array[0, 0]
 
-        weight = get_exp_weight(exp)
+        weight = 1/medvar
 
         # order must match stackers, wcss, bboxes
         exps2add = [exp, noise_exp, psf_exp, mfrac_exp]
@@ -204,8 +204,7 @@ def make_coadd(
             stackers, exps2add, wcss, bboxes, warpers, verify, ormasks
         ):
             warp_and_add(
-                _stacker, _warper, _exp, _wcs, _bbox, weight,
-                _verify, _ormask,
+                _stacker, _warper, _exp, _wcs, _bbox, weight, _verify, _ormask,
             )
         nuse += 1
 
@@ -345,8 +344,8 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
 
     Returns
     -------
-    exp, noise_exp, var, mfrac_exp
-        where var is the median of the variance for the exposure
+    exp, noise_exp, medvar, mfrac_exp
+        where medvar is the median of the variance for the exposure
         and mfrac_exp is an image of zeros and ones indicating interpolated pixels
     """
     if isinstance(exp_or_ref, DeferredDatasetHandle):
@@ -365,7 +364,6 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
     # we can now use BRIGHT directly as it is in our mask plane
     # flag_bright_as_sat(exp)
 
-    # TODO rename var
     noise_exp, medvar = get_noise_exp(
         exp=exp, rng=rng, remove_poisson=remove_poisson,
     )
@@ -528,36 +526,6 @@ def get_coadd_stats_control():
         stats_ctrl.setMaskPropagationThreshold(bit, threshold)
 
     return stats_ctrl
-
-
-def get_exp_weight(exp):
-    """
-    get a afw_math.StatisticsControl with "and mask" set
-
-    Parameters
-    ----------
-    mask: mask for setAndMask
-        Bits for which the pixels will not be added to the coadd.
-        e.g. we would not let EDGE pixels get coadded
-
-    Returns
-    -------
-    afw_math.StatisticsControl
-    """
-    # TODO get this from the variance plane
-    # Compute variance weight
-    stats_ctrl = afw_math.StatisticsControl()
-    stats_ctrl.setCalcErrorFromInputVariance(True)
-    stat_obj = afw_math.makeStatistics(
-        exp.variance,
-        exp.mask,
-        afw_math.MEANCLIP,
-        stats_ctrl,
-    )
-
-    mean_var, mean_var_err = stat_obj.getResult(afw_math.MEANCLIP)
-    weight = 1.0 / float(mean_var)
-    return weight
 
 
 def get_dims_from_bbox(bbox):
