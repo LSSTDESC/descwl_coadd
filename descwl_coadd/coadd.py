@@ -334,7 +334,8 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
     get the exposure (possibly from a deferred handle) and create
     a corresponding noise exposure
 
-    TODO move interpolating BRIGHT into metadetect or mdet-lsst-sim
+    TODO move interpolating BRIGHT downstream
+
     Currently adding that plane if it doesn't exist
 
     Parameters
@@ -932,7 +933,7 @@ def flag_bright_as_sat(exp):
     """
     flag BRIGHT also as SAT
 
-    TODO remove
+    TODO remove and do bright object masking downstream
     """
 
     mask = exp.mask.array
