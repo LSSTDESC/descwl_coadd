@@ -289,7 +289,7 @@ def verify_boundary(exp):
 
     flagval = exp.mask.getPlaneBitMask(BOUNDARY_BIT_NAME)
     if np.any(exp.mask.array & flagval != 0):
-        # TODO keep track of what gets left out
+        # TODO sprint week keep track of what gets left out
         LOG.info('skipping warp that includes boundary pixels')
         if False:
             vis.show_image_and_mask(exp)
@@ -322,7 +322,11 @@ def make_coadd_exposure(coadd_bbox, coadd_wcs, filter_label):
     # these planes are added by DM, add them here for consistency
     coadd_exp.mask.addMaskPlane("REJECTED")
     coadd_exp.mask.addMaskPlane("CLIPPED")
+
+    # From J. Bosch: the PSF is discontinuous in the neighborhood of this pixel
+    # because the number of inputs to the coadd changed due to chip boundaries
     coadd_exp.mask.addMaskPlane("SENSOR_EDGE")
+
     return coadd_exp
 
 
@@ -479,7 +483,7 @@ def do_add(stacker, warp, weight, ormask):
         This will be or'ed with the warped mask
     """
 
-    # TODO configure stacker to do this
+    # TODO sprint week configure stacker to do this
     if ormask is not None:
         ormask |= warp.mask.array
 
@@ -541,13 +545,6 @@ def make_stacker(coadd_dims):
     """
     make an AccumulatorMeanStack to do online coadding
 
-    We only keep track of some bits for what pixels are included
-    (bit_mask_value) and what makes it into the ormask (mask_threshold_dict).
-
-    If we have done our edge checking properly, the coadd should contain no
-    EDGE bits for the image.  The PSF may contain EDGE bits the way we work
-    currently
-
     Parameters
     ----------
     coadd_dims: tuple/list
@@ -576,6 +573,8 @@ def make_stacker(coadd_dims):
 def get_coadd_stats_control():
     """
     get a afw_math.StatisticsControl with "and mask" set
+
+    TODO sprint week get Eli's help with this
 
     Returns
     -------
@@ -628,9 +627,6 @@ def get_noise_exp(exp, rng, remove_poisson):
     """
     get a noise image based on the input exposure
 
-    TODO gain correct separately in each amplifier, currently
-    averaged
-
     Parameters
     ----------
     exp: afw.image.ExposureF
@@ -654,7 +650,10 @@ def get_noise_exp(exp, rng, remove_poisson):
     use = np.where(np.isfinite(variance) & np.isfinite(signal))
 
     if remove_poisson:
-        # TODO: getGain may not work for a calexp
+        # TODO sprint week gain correct separately in each amplifier, currently
+        # averaged
+        #
+        # TODO sprint week getGain may not work for a calexp
         gains = [
             amp.getGain() for amp in exp.getDetector().getAmplifiers()
         ]
@@ -724,6 +723,8 @@ def get_psf_exp(
 
 def get_psf_bbox(pos, dim):
     """
+    TODO sprint week revisit along with get_coadd_psf_bbox
+
     copied from https://github.com/beckermr/pizza-cutter/blob/
         66b9e443f840798996b659a4f6ce59930681c776/pizza_cutter/des_pizza_cutter/_se_image.py#L708
     """
@@ -759,7 +760,7 @@ def get_coadd_psf_bbox(x, y, dim):
     """
     suggested by Matt Becker
 
-    TODO revisit
+    TODO sprint week revisit along with get_psf_bbox
     """
     xpix = int(x)
     ypix = int(y)
