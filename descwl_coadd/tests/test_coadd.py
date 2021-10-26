@@ -345,4 +345,5 @@ def test_coadds_bright(dither, rotate):
 
 
 if __name__ == '__main__':
-    test_coadds_boundary(rotate=True)
+    # test_coadds_boundary(rotate=True)
+    test_coadds_smoke(False, False)

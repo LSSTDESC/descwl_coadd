@@ -5,7 +5,6 @@ import ngmix
 import lsst.afw.math as afw_math
 import lsst.afw.image as afw_image
 from lsst.meas.algorithms import AccumulatorMeanStack
-from lsst.pipe.tasks.assembleCoadd import AssembleCoaddTask
 from lsst.daf.butler import DeferredDatasetHandle
 import lsst.log
 import lsst.geom as geom
@@ -27,12 +26,6 @@ DEFAULT_LOGLEVEL = 'info'
 # must be added to the mask plane by the caller
 
 FLAGS2INTERP = ('BAD', 'CR', 'SAT', 'BRIGHT')
-
-# No EDGE should make it into the coadds. We keep track of nothing else.
-# Instead we keep track of the bits of interest in the mfrac array and separate
-# array for BRIGHT
-
-FLAGS2CHECK_FOR_COADD = ('EDGE', )
 
 BOUNDARY_BIT_NAME = 'BOUNDARY'
 BOUNDARY_SIZE = 3
@@ -86,7 +79,7 @@ def make_coadd_obs(
         coadd_noise_exp=coadd_data["coadd_noise_exp"],
         coadd_psf_exp=coadd_data["coadd_psf_exp"],
         coadd_mfrac_exp=coadd_data["coadd_mfrac_exp"],
-        ormask=coadd_data['ormask'],
+        ormask=coadd_data['coadd_exp'].mask.array,
         loglevel=loglevel,
     )
 
@@ -187,9 +180,6 @@ def make_coadd(
     nkept = 0
     logger.info('warping and adding exposures')
 
-    ormask = np.zeros(coadd_dims, dtype='i4')
-    ormasks = [ormask, None, None, None]
-
     for exp_or_ref in PBar(exps):
         exp, noise_exp, medvar, mfrac_exp = get_exp_and_noise(
             exp_or_ref=exp_or_ref, rng=rng, remove_poisson=remove_poisson,
@@ -213,30 +203,32 @@ def make_coadd(
         warps = get_warps(exps2add, wcss, bboxes, warpers)
 
         check_ok = [
-            verify_boundary(_warp)
+            verify_warp(_warp)
             for _warp, _verify in zip(warps, verify) if _verify
         ]
-        print('check_ok:', check_ok)
 
         if all(check_ok):
             nkept += 1
-            add_all(stackers, warps, ormasks, weight)
+            add_all(stackers, warps, weight)
 
     if nkept == 0:
         return {'nkept': nkept}
+
+    # import IPython
+    # IPython.embed()
+
+    # stacker.fill_stacked_masked_image(coadd_exp)
+    # noise_stacker.fill_stacked_masked_image(coadd_noise_exp)
+    # psf_stacker.fill_stacked_masked_image(coadd_psf_exp)
+    # mfrac_stacker.fill_stacked_masked_image(coadd_mfrac_exp)
 
     stacker.fill_stacked_masked_image(coadd_exp.maskedImage)
     noise_stacker.fill_stacked_masked_image(coadd_noise_exp.maskedImage)
     psf_stacker.fill_stacked_masked_image(coadd_psf_exp.maskedImage)
     mfrac_stacker.fill_stacked_masked_image(coadd_mfrac_exp.maskedImage)
 
-    if not verify_boundary(coadd_exp):
-        raise RuntimeError('boundary pixels found in coadd')
-    if not verify_boundary(coadd_noise_exp):
-        raise RuntimeError('boundary pixels found in noise coadd')
-
-    flag_bright_as_sat_in_coadd(coadd_exp, ormask)
-    flag_bright_as_sat_in_coadd(coadd_noise_exp, ormask)
+    flag_bright_as_sat_in_coadd(coadd_exp)
+    flag_bright_as_sat_in_coadd(coadd_noise_exp)
 
     logger.info('making psf')
     psf = extract_coadd_psf(coadd_psf_exp, logger)
@@ -249,7 +241,6 @@ def make_coadd(
         coadd_noise_exp=coadd_noise_exp,
         coadd_psf_exp=coadd_psf_exp,
         coadd_mfrac_exp=coadd_mfrac_exp,
-        ormask=ormask,
     )
 
 
@@ -271,7 +262,7 @@ def add_boundary_bit(exp):
         vis.show_image_and_mask(exp)
 
 
-def verify_boundary(exp):
+def verify_warp(exp):
     """
     check to see if boundary pixels were included in the xp
 
@@ -287,7 +278,7 @@ def verify_boundary(exp):
     True if no boundary pixels were found
     """
 
-    flagval = exp.mask.getPlaneBitMask(BOUNDARY_BIT_NAME)
+    flagval = exp.mask.getPlaneBitMask([BOUNDARY_BIT_NAME, 'NO_DATA'])
     if np.any(exp.mask.array & flagval != 0):
         # TODO sprint week keep track of what gets left out Jim/Arun
         LOG.info('skipping warp that includes boundary pixels')
@@ -458,36 +449,12 @@ def make_mfrac_exp(*, mfrac_msk, exp):
     return mfrac_exp
 
 
-def add_all(stackers, warps, ormasks, weight):
+def add_all(stackers, warps, weight):
     """
     run do_add on all inputs
     """
-    for _stacker, _warp, _ormask in zip(stackers, warps, ormasks):
-        do_add(_stacker, _warp, weight, _ormask)
-
-
-def do_add(stacker, warp, weight, ormask):
-    """
-    warp the exposure and add it
-
-    Parameters
-    ----------
-    stacker: AccumulatorMeanStack
-        A stacker, type
-        lsst.pipe.tasks.accumulatorMeanStack.AccumulatorMeanStack
-    warp: afw_image.ExposureF
-        The exposure to warp and add
-    weight: float
-        Weight for this image in the stack
-    ormask: array
-        This will be or'ed with the warped mask
-    """
-
-    # TODO sprint week configure stacker to do this. Need Eli
-    if ormask is not None:
-        ormask |= warp.mask.array
-
-    stacker.add_masked_image(warp, weight=weight)
+    for _stacker, _warp in zip(stackers, warps):
+        _stacker.add_masked_image(_warp, weight=weight)
 
 
 def get_warps(exps, wcss, bboxes, warpers):
@@ -549,61 +516,39 @@ def make_stacker(coadd_dims):
     ----------
     coadd_dims: tuple/list
         The coadd dimensions
-    """
-
-    stats_ctrl = get_coadd_stats_control()
-
-    mask_map = AssembleCoaddTask.setRejectedMaskMapping(stats_ctrl)
-
-    cefiv = stats_ctrl.getCalcErrorFromInputVariance()
-
-    mask_threshold_dict = AccumulatorMeanStack.stats_ctrl_to_threshold_dict(stats_ctrl)
-
-    return AccumulatorMeanStack(
-        shape=coadd_dims,
-        bit_mask_value=stats_ctrl.getAndMask(),
-        mask_threshold_dict=mask_threshold_dict,
-        mask_map=mask_map,
-        no_good_pixels_mask=stats_ctrl.getNoGoodPixelsMask(),
-        calc_error_from_input_variance=cefiv,
-        compute_n_image=False,
-    )
-
-
-def get_coadd_stats_control():
-    """
-    get a afw_math.StatisticsControl with "and mask" set
-
-    TODO sprint week get Eli's help with this
 
     Returns
     -------
-    afw_math.StatisticsControl
+    lsst.meas.algorithms.AccumulatorMeanStack
+
+    Notes
+    -----
+    bit_mask_value = 0 says no filtering on mask plane
+    mask_threshold_dict={} says propagate all mask plane bits to the
+        coadd mask plane
+    mask_map=[] says do not remap any mask plane bits to new values; negotiable
+    no_good_pixels_mask=None says use default NO_DATA mask plane in coadds for
+        areas that have no inputs; shouldn't matter since no filtering
+    calc_error_from_input_variance=True says use the individual variances planes
+        to predict coadd variance
+    compute_n_image=False says do not compute number of images input to
+        each pixel
     """
 
-    mask = afw_image.Mask.getPlaneBitMask(FLAGS2CHECK_FOR_COADD)
-
     stats_ctrl = afw_math.StatisticsControl()
-    stats_ctrl.setAndMask(mask)
-    # not used by the Accumulator
-    # stats_ctrl.setWeighted(True)
-    stats_ctrl.setCalcErrorFromInputVariance(True)
 
-    # Currently doing our own ormask, and this was just for checking the EDGE
-    # value. Ask Eli what we should do
-
-    # the mask here is going to be just EDGE and we always
-    # want to watch for it. it is a bug if EDGE is included
-    # for regular images (not psf)
-    mask_prop_thresh = {}
-    for flagname in FLAGS2CHECK_FOR_COADD:
-        mask_prop_thresh[flagname] = 0.0
-
-    for plane, threshold in mask_prop_thresh.items():
-        bit = afw_image.Mask.getMaskPlane(plane)
-        stats_ctrl.setMaskPropagationThreshold(bit, threshold)
-
-    return stats_ctrl
+    # TODO after sprint
+    # Eli will fix bug and will set no_good_pixels_mask to None
+    return AccumulatorMeanStack(
+        shape=coadd_dims,
+        bit_mask_value=0,
+        mask_threshold_dict={},
+        mask_map=[],
+        # no_good_pixels_mask=None,
+        no_good_pixels_mask=stats_ctrl.getNoGoodPixelsMask(),
+        calc_error_from_input_variance=True,
+        compute_n_image=False,
+    )
 
 
 def get_dims_from_bbox(bbox):
@@ -1025,7 +970,7 @@ def flag_bright_as_sat(exp):
         mask[w] |= satval
 
 
-def flag_bright_as_sat_in_coadd(exp, ormask):
+def flag_bright_as_sat_in_coadd(exp):
     """
     wherever BRIGHT is set in the ormask, set
     the BRIGHT and SAT flags in the exposure mask
@@ -1033,10 +978,11 @@ def flag_bright_as_sat_in_coadd(exp, ormask):
     """
 
     mask = exp.mask
+
     satval = mask.getPlaneBitMask('SAT')
     brightval = mask.getPlaneBitMask('BRIGHT')
 
-    w = np.where(ormask & brightval != 0)
+    w = np.where(mask.array & brightval != 0)
     if w[0].size > 0:
         mask.array[w] |= satval
         mask.array[w] |= brightval
