@@ -11,6 +11,7 @@ from lsst.afw.math import FixedKernel
 
 from . import vis
 from .interp import interpolate_image_and_noise
+from .util import get_coadd_center
 from .coadd_obs import CoaddObs
 from esutil.pbar import PBar
 import logging
@@ -18,7 +19,6 @@ import logging
 LOG = logging.getLogger('descwl_coadd.coadd')
 
 DEFAULT_INTERP = 'lanczos3'
-DEFAULT_LOGLEVEL = 'info'
 
 # areas in the image with these flags set will get interpolated note BRIGHT
 # must be added to the mask plane by the caller
@@ -29,10 +29,7 @@ BOUNDARY_BIT_NAME = 'BOUNDARY'
 BOUNDARY_SIZE = 3
 
 
-def make_coadd_obs(
-    exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson,
-    loglevel=DEFAULT_LOGLEVEL,
-):
+def make_coadd_obs(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
     """
     Make a coadd from the input exposures and store in a CoaddObs, which
     inherits from ngmix.Observation. See make_coadd for docs on online
@@ -53,8 +50,6 @@ def make_coadd_obs(
     remove_poisson: bool
         If True, remove the poisson noise from the variance
         estimate.
-    loglevel : str, optional
-        The logging level. Default is 'info'.
 
     Returns
     -------
@@ -66,7 +61,6 @@ def make_coadd_obs(
         exps=exps, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
         psf_dims=psf_dims,
         rng=rng, remove_poisson=remove_poisson,
-        loglevel=loglevel,
     )
 
     if coadd_data['nkept'] == 0:
@@ -77,14 +71,10 @@ def make_coadd_obs(
         coadd_noise_exp=coadd_data["coadd_noise_exp"],
         coadd_psf_exp=coadd_data["coadd_psf_exp"],
         coadd_mfrac_exp=coadd_data["coadd_mfrac_exp"],
-        loglevel=loglevel,
     )
 
 
-def make_coadd(
-    exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson,
-    loglevel=DEFAULT_LOGLEVEL,
-):
+def make_coadd(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
     """
     make a coadd from the input exposures, working in "online mode",
     adding each exposure separately.  This saves memory when
@@ -105,8 +95,6 @@ def make_coadd(
     remove_poisson: bool
         If True, remove the poisson noise from the variance
         estimate.
-    loglevel : str, optional
-        The logging level. Default is 'info'.
 
     Returns
     -------
@@ -687,27 +675,6 @@ def get_coadd_psf_bbox(x, y, dim):
         geom.Point2I(xmin, ymin),
         geom.Point2I(xmin + dim-1, ymin + dim-1),
     )
-
-
-def get_coadd_center(coadd_wcs, coadd_bbox):
-    """
-    get the pixel and sky center of the coadd within the bbox
-
-    Parameters
-    -----------
-    coadd_wcs: DM wcs
-        The wcs for the coadd
-    coadd_bbox: geom.Box2I
-        The bounding box for the coadd within larger wcs system
-
-    Returns
-    -------
-    pixcen as Point2D, skycen as SpherePoint
-    """
-    pixcen = coadd_bbox.getCenter()
-    skycen = coadd_wcs.pixelToSky(pixcen)
-
-    return pixcen, skycen
 
 
 def flag_bright_as_sat_in_coadd(exp):

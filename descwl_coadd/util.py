@@ -13,6 +13,7 @@ def get_coadd_center(coadd_wcs, coadd_bbox):
     -------
     pixcen as Point2D, skycen as SpherePoint
     """
+    # TODO check we get a pixel center
     pixcen = coadd_bbox.getCenter()
     skycen = coadd_wcs.pixelToSky(pixcen)
 

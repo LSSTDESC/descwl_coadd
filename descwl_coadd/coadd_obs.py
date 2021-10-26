@@ -26,8 +26,6 @@ class CoaddObs(ngmix.Observation):
         The psf coadd
     coadd_mfrac_exp : afw_image.ExposureF
         The masked frraction image.
-    loglevel : str, optional
-        The logging level. Default is 'info'.
     """
     def __init__(
         self, *,
@@ -35,7 +33,6 @@ class CoaddObs(ngmix.Observation):
         coadd_noise_exp,
         coadd_psf_exp,
         coadd_mfrac_exp,
-        loglevel='info',
     ):
 
         self.coadd_exp = coadd_exp

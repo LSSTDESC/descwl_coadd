@@ -1,6 +1,5 @@
 import logging
 from .coadd import (
-    DEFAULT_LOGLEVEL,
     CoaddObs,
     check_psf_dims,
     get_coadd_center,
@@ -12,10 +11,7 @@ from .coadd import (
 LOG = logging.getLogger('descwl_coadd.coadd_nowarp')
 
 
-def make_coadd_obs_nowarp(
-    exp, psf_dims, rng, remove_poisson,
-    loglevel=DEFAULT_LOGLEVEL,
-):
+def make_coadd_obs_nowarp(exp, psf_dims, rng, remove_poisson):
     """
     Make a coadd from the input exposures and store in a CoaddObs, which
     inherits from ngmix.Observation. See make_coadd for docs on online
@@ -32,8 +28,6 @@ def make_coadd_obs_nowarp(
     remove_poisson: bool
         If True, remove the poisson noise from the variance
         estimate.
-    loglevel : str, optional
-        The logging level. Default is 'info'.
 
     Returns
     -------
@@ -44,7 +38,6 @@ def make_coadd_obs_nowarp(
         exp=exp,
         psf_dims=psf_dims,
         rng=rng, remove_poisson=remove_poisson,
-        loglevel=loglevel,
     )
     if coadd_data is None:
         return None
@@ -54,14 +47,10 @@ def make_coadd_obs_nowarp(
         coadd_noise_exp=coadd_data["coadd_noise_exp"],
         coadd_psf_exp=coadd_data["coadd_psf_exp"],
         coadd_mfrac_exp=coadd_data["coadd_mfrac_exp"],
-        loglevel=loglevel,
     )
 
 
-def make_coadd_nowarp(
-    exp, psf_dims, rng, remove_poisson,
-    loglevel=DEFAULT_LOGLEVEL,
-):
+def make_coadd_nowarp(exp, psf_dims, rng, remove_poisson):
     """
     make a coadd from the input exposures, working in "online mode",
     adding each exposure separately.  This saves memory when
@@ -78,8 +67,6 @@ def make_coadd_nowarp(
     remove_poisson: bool
         If True, remove the poisson noise from the variance
         estimate.
-    loglevel : str, optional
-        The logging level. Default is 'info'.
 
     Returns
     -------

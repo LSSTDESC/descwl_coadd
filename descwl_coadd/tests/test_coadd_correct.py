@@ -167,7 +167,6 @@ def test_coadd_image_correct(crazy_wcs, crazy_obj):
         psf_dims=(psf_dim,)*2,
         rng=rng,
         remove_poisson=False,
-        loglevel='debug',
     )
 
     coadd_img = coadd.image
