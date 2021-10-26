@@ -289,7 +289,7 @@ def verify_boundary(exp):
 
     flagval = exp.mask.getPlaneBitMask(BOUNDARY_BIT_NAME)
     if np.any(exp.mask.array & flagval != 0):
-        # TODO sprint week keep track of what gets left out
+        # TODO sprint week keep track of what gets left out Jim/Arun
         LOG.info('skipping warp that includes boundary pixels')
         if False:
             vis.show_image_and_mask(exp)
@@ -483,7 +483,7 @@ def do_add(stacker, warp, weight, ormask):
         This will be or'ed with the warped mask
     """
 
-    # TODO sprint week configure stacker to do this
+    # TODO sprint week configure stacker to do this. Need Eli
     if ormask is not None:
         ormask |= warp.mask.array
 
@@ -651,9 +651,9 @@ def get_noise_exp(exp, rng, remove_poisson):
 
     if remove_poisson:
         # TODO sprint week gain correct separately in each amplifier, currently
-        # averaged
+        # averaged.  Morgan
         #
-        # TODO sprint week getGain may not work for a calexp
+        # TODO sprint week getGain may not work for a calexp Morgan
         gains = [
             amp.getGain() for amp in exp.getDetector().getAmplifiers()
         ]
@@ -723,7 +723,7 @@ def get_psf_exp(
 
 def get_psf_bbox(pos, dim):
     """
-    TODO sprint week revisit along with get_coadd_psf_bbox
+    TODO sprint week revisit along with get_coadd_psf_bbox.  Jim?
 
     copied from https://github.com/beckermr/pizza-cutter/blob/
         66b9e443f840798996b659a4f6ce59930681c776/pizza_cutter/des_pizza_cutter/_se_image.py#L708
@@ -760,7 +760,7 @@ def get_coadd_psf_bbox(x, y, dim):
     """
     suggested by Matt Becker
 
-    TODO sprint week revisit along with get_psf_bbox
+    TODO sprint week revisit along with get_psf_bbox Jim?
     """
     xpix = int(x)
     ypix = int(y)
