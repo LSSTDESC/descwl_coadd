@@ -1,13 +1,15 @@
+import logging
 from .coadd import (
     DEFAULT_LOGLEVEL,
     CoaddObs,
-    make_logger,
     check_psf_dims,
     get_coadd_center,
     get_exp_and_noise,
     get_psf_exp,
     flag_bright_as_sat_in_coadd,
 )
+
+LOG = logging.getLogger('descwl_coadd.coadd_nowarp')
 
 
 def make_coadd_obs_nowarp(
@@ -52,7 +54,6 @@ def make_coadd_obs_nowarp(
         coadd_noise_exp=coadd_data["coadd_noise_exp"],
         coadd_psf_exp=coadd_data["coadd_psf_exp"],
         coadd_mfrac_exp=coadd_data["coadd_mfrac_exp"],
-        ormask=coadd_data['ormask'],
         loglevel=loglevel,
     )
 
@@ -95,8 +96,7 @@ def make_coadd_nowarp(
                 The fraction of SE images interpolated in each coadd pixel.
     """
 
-    logger = make_logger('coadd', loglevel)
-    logger.info('making coadd obs')
+    LOG.info('making coadd obs')
 
     check_psf_dims(psf_dims)
 
@@ -113,14 +113,12 @@ def make_coadd_nowarp(
         var=var,
     )
 
-    ormask = exp.mask.array.copy()
-    flag_bright_as_sat_in_coadd(exp, ormask)
-    flag_bright_as_sat_in_coadd(noise_exp, ormask)
+    flag_bright_as_sat_in_coadd(exp)
+    flag_bright_as_sat_in_coadd(noise_exp)
 
     return dict(
         coadd_exp=exp,
         coadd_noise_exp=noise_exp,
         coadd_psf_exp=psf_exp,
         coadd_mfrac_exp=mfrac_exp,
-        ormask=ormask,
     )
