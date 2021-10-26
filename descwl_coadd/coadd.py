@@ -222,7 +222,6 @@ def make_coadd(
             nkept += 1
             add_all(stackers, warps, ormasks, weight)
 
-    # TODO switch to returning {'nkept': 0}
     if nkept == 0:
         return {'nkept': nkept}
 
@@ -297,24 +296,6 @@ def verify_boundary(exp):
         return False
     else:
         return True
-
-
-def verify_coadd_edges(exp):
-    """
-    ensure no EDGE were included in the coadd
-
-    raises ValueError
-
-    TODO do three-pixel boundary with new bit and check just that
-
-    but in real data we will want to exclude distorted edges in this way
-
-    Yusra says something fancy happens before warping to remove
-    EDGE
-    """
-    flagval = exp.mask.getPlaneBitMask('EDGE')
-    if np.any(exp.mask.array & flagval != 0):
-        raise ValueError('found EDGE in coadd')
 
 
 def make_coadd_exposure(coadd_bbox, coadd_wcs, filter_label):
