@@ -115,6 +115,7 @@ def make_coadd(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
 
     filter_label = exps[0].getFilterLabel()
 
+    # this is the requested coadd psf dims
     check_psf_dims(psf_dims)
 
     # sky center of this coadd within bbox
@@ -626,7 +627,8 @@ def get_psf_exp(
 
 def get_psf_bbox(pos, dim):
     """
-    TODO sprint week revisit along with get_coadd_psf_bbox.  Eli
+    TODO make sure that if I coadd one of these it matches a star
+    that was coadded with the same offset
 
     copied from https://github.com/beckermr/pizza-cutter/blob/
         66b9e443f840798996b659a4f6ce59930681c776/pizza_cutter/des_pizza_cutter/_se_image.py#L708
@@ -676,6 +678,28 @@ def get_coadd_psf_bbox(x, y, dim):
         geom.Point2I(xmin + dim-1, ymin + dim-1),
     )
 
+
+# TODO do this instead. This should work because getCenter on
+# the bbox is integer, and psf dims are odd
+# def get_coadd_psf_bbox(cen, dim):
+#     """
+#     TODO sprint week revisit along with get_psf_bbox Eli
+#
+#     send the center demand it is Point2I
+#     assert dim is odd (again)
+#     """
+#
+#     assert isinstance(cen, geom.Point2I)
+#     assert dim % 2 != 0
+#
+#     xmin = xpix - (dim - 1)//2
+#     ymin = ypix - (dim - 1)//2
+#
+#     return geom.Box2I(
+#         geom.Point2I(xmin, ymin),
+#         geom.Point2I(xmin + dim-1, ymin + dim-1),
+#     )
+#
 
 def flag_bright_as_sat_in_coadd(exp):
     """
