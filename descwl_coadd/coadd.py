@@ -589,6 +589,9 @@ def get_coadd_stats_control():
     # stats_ctrl.setWeighted(True)
     stats_ctrl.setCalcErrorFromInputVariance(True)
 
+    # Currently doing our own ormask, and this was just for checking the EDGE
+    # value. Ask Eli what we should do
+
     # the mask here is going to be just EDGE and we always
     # want to watch for it. it is a bug if EDGE is included
     # for regular images (not psf)
