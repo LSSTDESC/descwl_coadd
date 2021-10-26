@@ -335,6 +335,7 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
     a corresponding noise exposure
 
     TODO move interpolating BRIGHT downstream
+    this is a longer term item, not for the sprint week
 
     Currently adding that plane if it doesn't exist
 
@@ -934,6 +935,7 @@ def flag_bright_as_sat(exp):
     flag BRIGHT also as SAT
 
     TODO remove and do bright object masking downstream
+    this is a longer term item, not for the sprint week
     """
 
     mask = exp.mask.array
