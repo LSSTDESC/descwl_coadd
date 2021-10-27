@@ -638,10 +638,6 @@ def get_psf_bbox(pos, dim):
     -------
     lsst.geom.Box2I
 
-    TODO for sprint week, devise a test for this.  Eli suggested make a star
-    with given offset, coadd it and make sure the residuals with respect to a
-    coadded psf don't show significant dipoles.
-
     Notes
     ------
     copied from https://github.com/beckermr/pizza-cutter/blob/
