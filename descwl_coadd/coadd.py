@@ -28,6 +28,9 @@ FLAGS2INTERP = ('BAD', 'CR', 'SAT', 'BRIGHT')
 BOUNDARY_BIT_NAME = 'BOUNDARY'
 BOUNDARY_SIZE = 3
 
+HIGH_MASKFRAC = 2**0
+WARP_HAS_EDGE = 2**1
+
 
 def make_coadd_obs(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
     """
@@ -66,12 +69,14 @@ def make_coadd_obs(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
     if coadd_data['nkept'] == 0:
         return None
 
-    return CoaddObs(
+    coadd_obs = CoaddObs(
         coadd_exp=coadd_data["coadd_exp"],
         coadd_noise_exp=coadd_data["coadd_noise_exp"],
         coadd_psf_exp=coadd_data["coadd_psf_exp"],
         coadd_mfrac_exp=coadd_data["coadd_mfrac_exp"],
     )
+    coadd_obs.meta['flagdict'] = coadd_data['flagdict']
+    return coadd_obs
 
 
 def make_coadd(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
@@ -164,11 +169,19 @@ def make_coadd(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
     nkept = 0
     LOG.info('warping and adding exposures')
 
-    for exp_or_ref in PBar(exps):
+    # TODO use exp.getId() when it arrives in weekly 44.  For now use an index
+    # 0::len(exps)
+    flagdict = {}
+    for expid, exp_or_ref in enumerate(PBar(exps)):
         exp, noise_exp, medvar, mfrac_exp = get_exp_and_noise(
             exp_or_ref=exp_or_ref, rng=rng, remove_poisson=remove_poisson,
         )
+
+        # expid = exp.getId()
+        flagdict[expid] = 0
+
         if exp is None:
+            flagdict[expid] |= HIGH_MASKFRAC
             continue
 
         psf_exp = get_psf_exp(
@@ -194,9 +207,12 @@ def make_coadd(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
         if all(check_ok):
             nkept += 1
             add_all(stackers, warps, weight)
+        else:
+            flagdict[expid] |= WARP_HAS_EDGE
+            continue
 
     if nkept == 0:
-        return {'nkept': nkept}
+        return dict(nkept=nkept, flagdict=flagdict)
 
     stacker.fill_stacked_masked_image(coadd_exp.maskedImage)
     noise_stacker.fill_stacked_masked_image(coadd_noise_exp.maskedImage)
@@ -217,6 +233,7 @@ def make_coadd(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
         coadd_noise_exp=coadd_noise_exp,
         coadd_psf_exp=coadd_psf_exp,
         coadd_mfrac_exp=coadd_mfrac_exp,
+        flagdict=flagdict,
     )
 
 

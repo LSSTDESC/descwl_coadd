@@ -265,7 +265,13 @@ def test_coadds_boundary(rotate):
         if not rotate:
             assert coadd_dict['nkept'] == epochs_per_band
         else:
-            if coadd_dict is None or coadd_dict['nkept'] != epochs_per_band:
+            if coadd_dict['nkept'] != epochs_per_band:
+                ngood = 0
+                if coadd_dict is not None:
+                    for expid, flagval in coadd_dict['flagdict'].items():
+                        if flagval == 0:
+                            ngood += 1
+                    assert ngood == coadd_dict['nkept']
                 ok = True
             break
 
