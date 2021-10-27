@@ -1,6 +1,7 @@
 def get_coadd_center(coadd_wcs, coadd_bbox):
     """
     get the pixel and sky center of the coadd within the bbox
+    The pixel center is forced to be integer
 
     Parameters
     -----------
@@ -13,9 +14,10 @@ def get_coadd_center(coadd_wcs, coadd_bbox):
     -------
     pixcen as Point2D, skycen as SpherePoint
     """
+    from lsst.geom import Point2D, Point2I
 
-    # this returns integer positions
-    pixcen = coadd_bbox.getCenter()
-    skycen = coadd_wcs.pixelToSky(pixcen)
+    # force integer location
+    pixcen = Point2I(coadd_bbox.getCenter())
+    skycen = coadd_wcs.pixelToSky(Point2D(pixcen))
 
     return pixcen, skycen
