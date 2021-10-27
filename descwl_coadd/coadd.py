@@ -177,7 +177,6 @@ def make_coadd(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
             exp_or_ref=exp_or_ref, rng=rng, remove_poisson=remove_poisson,
         )
 
-        # expid = exp.getId()
         flagdict[expid] = 0
 
         if exp is None:
@@ -211,30 +210,32 @@ def make_coadd(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
             flagdict[expid] |= WARP_HAS_EDGE
             continue
 
-    if nkept == 0:
-        return dict(nkept=nkept, flagdict=flagdict)
+    result = dict(nkept=nkept, flagdict=flagdict)
 
-    stacker.fill_stacked_masked_image(coadd_exp.maskedImage)
-    noise_stacker.fill_stacked_masked_image(coadd_noise_exp.maskedImage)
-    psf_stacker.fill_stacked_masked_image(coadd_psf_exp.maskedImage)
-    mfrac_stacker.fill_stacked_masked_image(coadd_mfrac_exp.maskedImage)
+    if nkept > 0:
 
-    flag_bright_as_sat_in_coadd(coadd_exp)
-    flag_bright_as_sat_in_coadd(coadd_noise_exp)
+        stacker.fill_stacked_masked_image(coadd_exp.maskedImage)
+        noise_stacker.fill_stacked_masked_image(coadd_noise_exp.maskedImage)
+        psf_stacker.fill_stacked_masked_image(coadd_psf_exp.maskedImage)
+        mfrac_stacker.fill_stacked_masked_image(coadd_mfrac_exp.maskedImage)
 
-    LOG.info('making psf')
-    psf = extract_coadd_psf(coadd_psf_exp)
-    coadd_exp.setPsf(psf)
-    coadd_noise_exp.setPsf(psf)
+        # TODO move to downstream code
+        flag_bright_as_sat_in_coadd(coadd_exp)
+        flag_bright_as_sat_in_coadd(coadd_noise_exp)
 
-    return dict(
-        nkept=nkept,
-        coadd_exp=coadd_exp,
-        coadd_noise_exp=coadd_noise_exp,
-        coadd_psf_exp=coadd_psf_exp,
-        coadd_mfrac_exp=coadd_mfrac_exp,
-        flagdict=flagdict,
-    )
+        LOG.info('making psf')
+        psf = extract_coadd_psf(coadd_psf_exp)
+        coadd_exp.setPsf(psf)
+        coadd_noise_exp.setPsf(psf)
+
+        result.update(dict(
+            coadd_exp=coadd_exp,
+            coadd_noise_exp=coadd_noise_exp,
+            coadd_psf_exp=coadd_psf_exp,
+            coadd_mfrac_exp=coadd_mfrac_exp,
+        ))
+
+    return result
 
 
 def add_boundary_bit(exp):
