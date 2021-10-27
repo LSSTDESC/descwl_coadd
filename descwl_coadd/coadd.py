@@ -118,14 +118,13 @@ def make_coadd(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
     # this is the requested coadd psf dims
     check_psf_dims(psf_dims)
 
-    # sky center of this coadd within bbox
-    coadd_cen, coadd_cen_skypos = get_coadd_center(
+    # Get integer center of coadd and corresponding sky center.  This is used
+    # to construct the coadd psf bounding box and to reconstruct the psfs
+    coadd_cen_integer, coadd_cen_skypos = get_coadd_center(
         coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
     )
 
-    coadd_psf_bbox = get_coadd_psf_bbox(
-        x=coadd_cen.x, y=coadd_cen.y, dim=psf_dims[0],
-    )
+    coadd_psf_bbox = get_coadd_psf_bbox(cen=coadd_cen_integer, dim=psf_dims[0])
     coadd_psf_wcs = coadd_wcs
 
     # separately stack data, noise, and psf
@@ -661,45 +660,35 @@ def get_psf_bbox(pos, dim):
     )
 
 
-def get_coadd_psf_bbox(x, y, dim):
+def get_coadd_psf_bbox(cen, dim):
     """
-    suggested by Matt Becker
+    compute the bounding box for the coadd, based on the coadd
+    center as an integer position (Point2I) and the dimensions
 
-    TODO sprint week revisit along with get_psf_bbox Eli
+    Parameters
+    ----------
+    cen: lsst.geom.Point2I
+        The center.  Should be gotten from bbox.getCenter() to
+        provide an integer position
+    dim: int
+        The dimensions of the psf, must be odd
+
+    Returns
+    -------
+    lsst.geom.Box2I
     """
-    xpix = int(x)
-    ypix = int(y)
 
-    xmin = (xpix - (dim - 1)/2)
-    ymin = (ypix - (dim - 1)/2)
+    assert isinstance(cen, geom.Point2I)
+    assert dim % 2 != 0
+
+    xmin = cen.x - (dim - 1)//2
+    ymin = cen.y - (dim - 1)//2
 
     return geom.Box2I(
         geom.Point2I(xmin, ymin),
-        geom.Point2I(xmin + dim-1, ymin + dim-1),
+        geom.Extent2I(dim, dim),
     )
 
-
-# TODO do this instead. This should work because getCenter on
-# the bbox is integer, and psf dims are odd
-# def get_coadd_psf_bbox(cen, dim):
-#     """
-#     TODO sprint week revisit along with get_psf_bbox Eli
-#
-#     send the center demand it is Point2I
-#     assert dim is odd (again)
-#     """
-#
-#     assert isinstance(cen, geom.Point2I)
-#     assert dim % 2 != 0
-#
-#     xmin = xpix - (dim - 1)//2
-#     ymin = ypix - (dim - 1)//2
-#
-#     return geom.Box2I(
-#         geom.Point2I(xmin, ymin),
-#         geom.Point2I(xmin + dim-1, ymin + dim-1),
-#     )
-#
 
 def flag_bright_as_sat_in_coadd(exp):
     """
