@@ -3,6 +3,7 @@ from numba import njit
 import ngmix
 import logging
 import lsst.geom as geom
+from lsst.geom import Point2D
 from . import vis
 from .util import get_coadd_center
 
@@ -40,6 +41,12 @@ class CoaddObs(ngmix.Observation):
         self.coadd_noise_exp = coadd_noise_exp
         self.coadd_mfrac_exp = coadd_mfrac_exp
 
+        self.coadd_cen_integer, _ = get_coadd_center(
+            coadd_wcs=coadd_exp.getWcs(),
+            coadd_bbox=coadd_exp.getBBox(),
+        )
+        self.coadd_cen = Point2D(self.coadd_cen_integer)
+
         self._finish_init()
 
     def show(self):
@@ -67,13 +74,8 @@ class CoaddObs(ngmix.Observation):
         """
 
         coadd_wcs = self.coadd_exp.getWcs()
-        coadd_bbox = self.coadd_exp.getBBox()
 
-        coadd_cen, coadd_cen_skypos = get_coadd_center(
-            coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
-        )
-
-        dm_jac = coadd_wcs.linearizePixelToSky(coadd_cen, geom.arcseconds)
+        dm_jac = coadd_wcs.linearizePixelToSky(self.coadd_cen, geom.arcseconds)
         matrix = dm_jac.getLinear().getMatrix()
 
         # note convention differences
@@ -91,15 +93,8 @@ class CoaddObs(ngmix.Observation):
         get the psf observation
         """
 
-        coadd_wcs = self.coadd_exp.getWcs()
-        coadd_bbox = self.coadd_exp.getBBox()
-
-        coadd_cen, coadd_cen_skypos = get_coadd_center(
-            coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
-        )
-
         psf_obj = self.coadd_exp.getPsf()
-        psf_image = psf_obj.computeKernelImage(coadd_cen).array
+        psf_image = psf_obj.computeKernelImage(self.coadd_cen).array
 
         psf_cen = (np.array(psf_image.shape)-1.0)/2.0
 
