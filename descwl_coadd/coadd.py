@@ -477,7 +477,6 @@ def get_warp(warper, exp, coadd_wcs, coadd_bbox):
     wexp = warper.warpExposure(
         coadd_wcs,
         exp,
-        maxBBox=exp.getBBox(),
         destBBox=coadd_bbox,
     )
     return wexp
