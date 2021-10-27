@@ -626,18 +626,39 @@ def get_psf_exp(
 
 def get_psf_bbox(pos, dim):
     """
-    TODO make sure that if I coadd one of these it matches a star
-    that was coadded with the same offset
+    get a bounding box for the psf at the given position
 
+    Parameters
+    ----------
+    pos: lsst.geom.Point2D
+        The position at which to get the bounding box
+    dim: int
+        The dimension of the psf, must be odd
+
+    Returns
+    -------
+    lsst.geom.Box2I
+
+    TODO for sprint week, devise a test for this.  Eli suggested make a star
+    with given offset, coadd it and make sure the residuals with respect to a
+    coadded psf don't show significant dipoles.
+
+    Notes
+    ------
     copied from https://github.com/beckermr/pizza-cutter/blob/
         66b9e443f840798996b659a4f6ce59930681c776/pizza_cutter/des_pizza_cutter/_se_image.py#L708
     """
 
-    # compute the lower left corner of the stamp
-    # we find the nearest pixel to the input (x, y)
-    # and offset by half the stamp size in pixels
-    # assumes the stamp size is odd
-    # there is an assert for this below
+    assert isinstance(pos, geom.Point2D)
+    assert dim % 2 != 0
+
+    # compute the lower left corner of the stamp xmin, ymin
+    #
+    # we first find the _nearest pixel_ to the input (x, y) and offset by half
+    # the stamp size in pixels.
+    #
+    # assumes the stamp size is odd, which is asserted above and is
+    # also built into the asserts below
 
     x = pos.x
     y = pos.y
@@ -656,7 +677,7 @@ def get_psf_bbox(pos, dim):
 
     return geom.Box2I(
         geom.Point2I(xmin, ymin),
-        geom.Point2I(xmin + dim-1, ymin + dim-1),
+        geom.Extent2I(dim, dim),
     )
 
 
