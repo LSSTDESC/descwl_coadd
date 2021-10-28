@@ -401,8 +401,6 @@ def interp_and_get_noise(exp, rng, remove_poisson, max_maskfrac):
         If the image is too heavily masked, None, None, None is returned
     """
 
-    mdict = exp.mask.getMaskPlaneDict()
-
     var = exp.variance.array
     weight = 1/var
 
