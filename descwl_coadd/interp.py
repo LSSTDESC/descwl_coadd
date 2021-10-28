@@ -1,18 +1,12 @@
 """
-most of this code is copied from https://github.com/beckermr/pizza-cutter/
-
-some of the newer stuff at the bottom was written in this repo
+Much of this code was copied or inspired by the interpolation code in
+https://github.com/beckermr/pizza-cutter/
 """
 import numpy as np
 from scipy.interpolate import CloughTocher2DInterpolator
 
 import numba
 from numba import njit
-
-# max allowed mask fraction for single epoch image going into coadd
-# TODO make this configurable
-# TODO do we even need this?  Should be checking at the warp level
-MAX_BADFRAC = 0.9
 
 
 @njit
@@ -98,7 +92,7 @@ def _get_nearby_good_pixels(image, bad_msk, nbad, buff=4):
     return bad_pix, good_pix, good_im, good_ind
 
 
-def _grid_interp(*, image, bad_msk):
+def do_interp(*, image, bad_msk, max_maskfrac):
     """
     interpolate the bad pixels in an image
 
@@ -108,15 +102,28 @@ def _grid_interp(*, image, bad_msk):
         the pixel data
     bad_msk: array
         boolean array, True means it is a bad pixel
+    max_maskfrac: float
+        Maximum allowed masked fraction.
+
+    Returns
+    -------
+    interpolated image: ndarray
+        The interpolated image
+
+    Raises
+    ------
+    HighMaskedFraction
     """
 
     nrows, ncols = image.shape
     npix = bad_msk.size
 
     nbad = bad_msk.sum()
-    bm_frac = nbad/npix
+    maskfrac = nbad/npix
 
-    if bm_frac < MAX_BADFRAC:
+    if maskfrac > max_maskfrac:
+        interp_image = None
+    else:
 
         bad_pix, good_pix, good_im, good_ind = \
             _get_nearby_good_pixels(image, bad_msk, nbad)
@@ -135,14 +142,12 @@ def _grid_interp(*, image, bad_msk):
         interp_image = image.copy()
         interp_image[bad_msk] = img_interp(bad_pix)
 
-        return interp_image
-
-    else:
-        return None
+    return interp_image, maskfrac
 
 
 def interpolate_image_and_noise(
-        *, image, noise, weight, bmask, bad_flags):
+    image, noise, weight, bmask, bad_flags, max_maskfrac
+):
     """Interpolate an image using the
     `scipy.interpolate.CloughTocher2DInterpolator`. An interpolated noise
     field is returned as well.
@@ -161,8 +166,8 @@ def interpolate_image_and_noise(
     bad_flags : int
         Pixels with in the bit mask using
         `(bmask & bad_flags) != 0`.
-    rng : `numpy.random.RandomState`
-        An RNG instance to use.
+    max_maskfrac: float
+        Maximum allowed masked fraction.
 
     Returns
     -------
@@ -176,18 +181,19 @@ def interpolate_image_and_noise(
     bad_msk = (weight <= 0) | ((bmask & bad_flags) != 0)
 
     if np.any(bad_msk):
-        interp_image = _grid_interp(image=image, bad_msk=bad_msk)
-        if interp_image is None:
-            return None, None, None
-
-        interp_noise = _grid_interp(image=noise, bad_msk=bad_msk)
-        if interp_noise is None:
-            return None, None, None
-
-        return interp_image, interp_noise, bad_msk
+        interp_image, maskfrac = do_interp(
+            image=image, bad_msk=bad_msk, max_maskfrac=max_maskfrac,
+        )
+        interp_noise, _ = do_interp(
+            image=noise, bad_msk=bad_msk, max_maskfrac=max_maskfrac,
+        )
     else:
         # return a copy here since the caller expects new images
-        return image.copy(), noise.copy(), np.zeros_like(image).astype(bool)
+        maskfrac = 0.0
+        interp_image = image.copy()
+        interp_noise = noise.copy()
+
+    return interp_image, interp_noise, bad_msk, maskfrac
 
 
 def replace_flag_with_noise(*, rng, image, noise_image, weight, mask, flag):
