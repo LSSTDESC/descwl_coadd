@@ -3,10 +3,11 @@ from .coadd import (
     CoaddObs,
     check_psf_dims,
     get_coadd_center,
-    get_exp_and_noise,
+    interp_and_get_noise,
     get_psf_exp,
     flag_bright_as_sat_in_coadd,
 )
+from .defaults import MAX_MASKFRAC
 
 LOG = logging.getLogger('descwl_coadd.coadd_nowarp')
 
@@ -31,7 +32,12 @@ def make_coadd_obs_nowarp(exp, psf_dims, rng, remove_poisson):
 
     Returns
     -------
-    CoaddObs (inherits from ngmix.Observation)
+    CoaddObs, exp_info
+        CoaddObs inherits from ngmix.Observation
+
+        exp_info is keyed by exposure id with each entry
+        a dict holding info about the processing.  These are currently
+            flags: zero if the exposure was kept
     """
 
     coadd_data = make_coadd_nowarp(
@@ -39,15 +45,20 @@ def make_coadd_obs_nowarp(exp, psf_dims, rng, remove_poisson):
         psf_dims=psf_dims,
         rng=rng, remove_poisson=remove_poisson,
     )
-    if coadd_data is None:
-        return None
 
-    return CoaddObs(
-        coadd_exp=coadd_data["coadd_exp"],
-        coadd_noise_exp=coadd_data["coadd_noise_exp"],
-        coadd_psf_exp=coadd_data["coadd_psf_exp"],
-        coadd_mfrac_exp=coadd_data["coadd_mfrac_exp"],
-    )
+    exp_info = coadd_data['exp_info']
+
+    if coadd_data['nkept'] == 0:
+        coadd_obs = None
+    else:
+        coadd_obs = CoaddObs(
+            coadd_exp=coadd_data["coadd_exp"],
+            coadd_noise_exp=coadd_data["coadd_noise_exp"],
+            coadd_psf_exp=coadd_data["coadd_psf_exp"],
+            coadd_mfrac_exp=coadd_data["coadd_mfrac_exp"],
+        )
+
+    return coadd_obs, exp_info
 
 
 def make_coadd_nowarp(exp, psf_dims, rng, remove_poisson):
@@ -87,8 +98,9 @@ def make_coadd_nowarp(exp, psf_dims, rng, remove_poisson):
 
     check_psf_dims(psf_dims)
 
-    _, noise_exp, var, mfrac_exp = get_exp_and_noise(
-        exp_or_ref=exp, rng=rng, remove_poisson=remove_poisson,
+    noise_exp, medvar, mfrac_exp, maskfrac = interp_and_get_noise(
+        exp=exp, rng=rng, remove_poisson=remove_poisson,
+        max_maskfrac=MAX_MASKFRAC,
     )
     cen, cen_skypos = get_coadd_center(
         coadd_wcs=exp.getWcs(), coadd_bbox=exp.getBBox(),
@@ -97,15 +109,27 @@ def make_coadd_nowarp(exp, psf_dims, rng, remove_poisson):
     psf_exp = get_psf_exp(
         exp=exp,
         coadd_cen_skypos=cen_skypos,
-        var=var,
+        var=medvar,
     )
 
     flag_bright_as_sat_in_coadd(exp)
     flag_bright_as_sat_in_coadd(noise_exp)
 
-    return dict(
-        coadd_exp=exp,
-        coadd_noise_exp=noise_exp,
-        coadd_psf_exp=psf_exp,
-        coadd_mfrac_exp=mfrac_exp,
-    )
+    try:
+        expid = exp.getId()
+    except AttributeError:
+        expid = rng.randint(0, 2**31)
+
+    exp_info = {}
+    exp_info[expid] = {
+        'flags': 0,
+        'maskfrac': maskfrac,
+    }
+    return {
+        'nkept': 1,
+        'exp_info': exp_info,
+        'coadd_exp': exp,
+        'coadd_noise_exp': noise_exp,
+        'coadd_psf_exp': psf_exp,
+        'coadd_mfrac_exp': mfrac_exp,
+    }
