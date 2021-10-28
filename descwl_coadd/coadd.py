@@ -378,7 +378,7 @@ def interp_and_get_noise(exp, rng, remove_poisson, max_maskfrac):
     get the exposure (possibly from a deferred handle) and create
     a corresponding noise exposure
 
-    Currently adding that plane if it doesn't exist
+    Artifacts are interpolated and the bit INTRP is set
 
     Parameters
     ----------
@@ -420,6 +420,11 @@ def interp_and_get_noise(exp, rng, remove_poisson, max_maskfrac):
     if iimage is None:
         return None, None, None, maskfrac
     else:
+
+        if maskfrac > 0:
+            interp_flag = exp.mask.getPlaneBitMask('INTRP')
+            exp.mask.array[mfrac_msk] |= interp_flag
+            noise_exp.mask.array[mfrac_msk] |= interp_flag
 
         exp.image.array[:, :] = iimage
         noise_exp.image.array[:, :] = inoise

@@ -328,11 +328,14 @@ def test_coadds_sat(dither, rotate):
             display.scale('log', 'minmax')
 
         mask = coadd.coadd_exp.mask
-        satflag = mask.getPlaneBitMask('SAT')
+        sat_flag = mask.getPlaneBitMask('SAT')
+        interp_flag = mask.getPlaneBitMask('INTRP')
 
-        wsat = np.where(mask.array & satflag != 0)
+        wsat = np.where(mask.array & sat_flag != 0)
+        wint = np.where(mask.array & interp_flag != 0)
 
         if wsat[0].size > 0:
+            assert wint[0].size > 0, 'expected sat to be interpolated'
             somesat = True
             break
 
