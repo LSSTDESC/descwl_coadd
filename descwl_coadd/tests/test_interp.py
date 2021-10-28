@@ -6,7 +6,7 @@ from descwl_coadd.interp import (
 from descwl_coadd.defaults import MAX_MASKFRAC
 
 
-def test_replace_bright_with_noise():
+def test_replace_flag_with_noise():
     shape = (10, 10)
     err = 0.1
     rng = np.random.RandomState(seed=42)

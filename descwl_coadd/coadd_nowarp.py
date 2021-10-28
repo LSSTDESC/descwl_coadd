@@ -5,7 +5,6 @@ from .coadd import (
     get_coadd_center,
     interp_and_get_noise,
     get_psf_exp,
-    flag_bright_as_sat_in_coadd,
 )
 from .defaults import MAX_MASKFRAC
 
@@ -111,9 +110,6 @@ def make_coadd_nowarp(exp, psf_dims, rng, remove_poisson):
         coadd_cen_skypos=cen_skypos,
         var=medvar,
     )
-
-    flag_bright_as_sat_in_coadd(exp)
-    flag_bright_as_sat_in_coadd(noise_exp)
 
     try:
         expid = exp.getId()

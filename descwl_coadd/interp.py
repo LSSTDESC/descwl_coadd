@@ -197,7 +197,8 @@ def interpolate_image_and_noise(
 
 
 def replace_flag_with_noise(*, rng, image, noise_image, weight, mask, flag):
-    """Replace regions marked bright with noise.
+    """
+    Replace regions with noise.
 
     We currently pull the bitmask value from the descwl_shear_sims package.
 

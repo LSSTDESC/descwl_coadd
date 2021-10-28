@@ -240,10 +240,6 @@ def make_coadd(
         psf_stacker.fill_stacked_masked_image(coadd_psf_exp.maskedImage)
         mfrac_stacker.fill_stacked_masked_image(coadd_mfrac_exp.maskedImage)
 
-        # TODO move to downstream code
-        flag_bright_as_sat_in_coadd(coadd_exp)
-        flag_bright_as_sat_in_coadd(coadd_noise_exp)
-
         LOG.info('making psf')
         psf = extract_coadd_psf(coadd_psf_exp)
         coadd_exp.setPsf(psf)
@@ -382,9 +378,6 @@ def interp_and_get_noise(exp, rng, remove_poisson, max_maskfrac):
     get the exposure (possibly from a deferred handle) and create
     a corresponding noise exposure
 
-    TODO move interpolating BRIGHT downstream
-    this is a longer term item, not for the sprint week
-
     Currently adding that plane if it doesn't exist
 
     Parameters
@@ -409,10 +402,6 @@ def interp_and_get_noise(exp, rng, remove_poisson, max_maskfrac):
     """
 
     mdict = exp.mask.getMaskPlaneDict()
-
-    if 'BRIGHT' not in mdict:
-        # this adds it globally too
-        exp.mask.addMaskPlane("BRIGHT")
 
     var = exp.variance.array
     weight = 1/var
@@ -763,24 +752,6 @@ def get_coadd_psf_bbox(cen, dim):
         geom.Point2I(xmin, ymin),
         geom.Extent2I(dim, dim),
     )
-
-
-def flag_bright_as_sat_in_coadd(exp):
-    """
-    wherever BRIGHT is set in the ormask, set
-    the BRIGHT and SAT flags in the exposure mask
-    SAT prevents detections
-    """
-
-    mask = exp.mask
-
-    satval = mask.getPlaneBitMask('SAT')
-    brightval = mask.getPlaneBitMask('BRIGHT')
-
-    w = np.where(mask.array & brightval != 0)
-    if w[0].size > 0:
-        mask.array[w] |= satval
-        mask.array[w] |= brightval
 
 
 def check_psf_dims(psf_dims):

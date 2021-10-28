@@ -159,11 +159,6 @@ class CoaddObs(ngmix.Observation):
             mfrac=mfrac,
         )
 
-        flags_for_maskfrac = self.coadd_exp.mask.getPlaneBitMask('BRIGHT')
-        self.meta['bright_frac'] = get_masked_frac(
-            mask=ormask,
-            flags=flags_for_maskfrac,
-        )
         self.meta['mask_frac'] = np.mean(mfrac)
 
 

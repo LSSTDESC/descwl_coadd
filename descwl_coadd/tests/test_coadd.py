@@ -285,10 +285,10 @@ def test_coadds_boundary(rotate):
                     reason='CATSIM_DIR not in os.environ')
 @pytest.mark.parametrize('dither', [False, True])
 @pytest.mark.parametrize('rotate', [False, True])
-def test_coadds_bright(dither, rotate):
+def test_coadds_sat(dither, rotate):
     """
-    run trials with stars and make sure we get some BRIGHT
-    and SAT in the coadd mask
+    run trials with stars and make sure we get some SAT
+    in the coadd mask
     """
     rng = np.random.RandomState(85)
 
@@ -297,10 +297,9 @@ def test_coadds_bright(dither, rotate):
     band = 'i'
     epochs_per_band = 1
 
-    ntrial = 10
+    ntrial = 100
 
     somesat = False
-    somebright = False
     for i in range(ntrial):
         sim_data = _make_sim(
             rng=rng, psf_type='gauss', bands=[band],
@@ -329,24 +328,16 @@ def test_coadds_bright(dither, rotate):
             display.scale('log', 'minmax')
 
         mask = coadd.coadd_exp.mask
-        brightflag = mask.getPlaneBitMask('BRIGHT')
         satflag = mask.getPlaneBitMask('SAT')
 
         wsat = np.where(mask.array & satflag != 0)
-        wbright = np.where(mask.array & brightflag != 0)
-        assert wbright[0].size >= wsat[0].size
 
         if wsat[0].size > 0:
             somesat = True
-
-        if wbright[0].size > 0:
-            somebright = True
-
-        if somesat and somebright:
             break
 
     print('i:', i)
-    assert somesat and somebright
+    assert somesat
 
 
 if __name__ == '__main__':

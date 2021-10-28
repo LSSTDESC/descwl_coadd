@@ -163,22 +163,20 @@ def test_coadds_noise():
 
 @pytest.mark.skipif('CATSIM_DIR' not in os.environ,
                     reason='CATSIM_DIR not in os.environ')
-def test_coadds_bright():
+def test_coadds_set():
     """
-    run trials with stars and make sure we get some BRIGHT
-    and SAT in the coadd mask
+    run trials with stars and make sure we get some SAT in the coadd mask
     """
-    rng = np.random.RandomState(85)
+    rng = np.random.RandomState(33)
 
     coadd_dim = 101
     psf_dim = 51
     band = 'i'
     epochs_per_band = 1
 
-    ntrial = 10
+    ntrial = 100
 
     somesat = False
-    somebright = False
     for i in range(ntrial):
         sim_data = _make_sim(
             rng=rng, psf_type='gauss', bands=[band],
@@ -197,21 +195,13 @@ def test_coadds_bright():
         )
 
         mask = coadd.coadd_exp.mask
-        brightflag = mask.getPlaneBitMask('BRIGHT')
         satflag = mask.getPlaneBitMask('SAT')
 
         wsat = np.where(mask.array & satflag != 0)
-        wbright = np.where(mask.array & brightflag != 0)
-        assert wbright[0].size >= wsat[0].size
 
         if wsat[0].size > 0:
             somesat = True
-
-        if wbright[0].size > 0:
-            somebright = True
-
-        if somesat and somebright:
             break
 
     print('i:', i)
-    assert somesat and somebright
+    assert somesat

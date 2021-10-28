@@ -1,10 +1,9 @@
 # Interpolation kernel for warping
 DEFAULT_INTERP = 'lanczos3'
 
-# Areas in the image with these flags set will get interpolated. Note BRIGHT
-# must be added to the mask plane by the caller.
+# Areas in the image with these flags set will get interpolated.
 
-FLAGS2INTERP = ('BAD', 'CR', 'SAT', 'BRIGHT')
+FLAGS2INTERP = ('BAD', 'CR', 'SAT')
 
 # A name for the mask plane to indicate boundary pixels.
 BOUNDARY_BIT_NAME = 'BOUNDARY'
