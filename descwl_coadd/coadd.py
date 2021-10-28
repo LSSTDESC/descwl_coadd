@@ -421,11 +421,6 @@ def interp_and_get_noise(exp, rng, remove_poisson, max_maskfrac):
         return None, None, None, maskfrac
     else:
 
-        if maskfrac > 0:
-            interp_flag = exp.mask.getPlaneBitMask('INTRP')
-            exp.mask.array[mfrac_msk] |= interp_flag
-            noise_exp.mask.array[mfrac_msk] |= interp_flag
-
         exp.image.array[:, :] = iimage
         noise_exp.image.array[:, :] = inoise
 
@@ -433,6 +428,16 @@ def interp_and_get_noise(exp, rng, remove_poisson, max_maskfrac):
 
         add_boundary_bit(exp)
         add_boundary_bit(noise_exp)
+
+        if maskfrac > 0:
+            interp_flag = exp.mask.getPlaneBitMask('INTRP')
+            exp.mask.array[mfrac_msk] |= interp_flag
+            noise_exp.mask.array[mfrac_msk] |= interp_flag
+
+            # import IPython
+            # IPython.embed()
+            assert not np.any(np.isnan(exp.image.array[mfrac_msk]))
+            assert not np.any(np.isnan(noise_exp.image.array[mfrac_msk]))
 
         return noise_exp, medvar, mfrac_exp, maskfrac
 

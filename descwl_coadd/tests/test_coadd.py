@@ -344,5 +344,6 @@ def test_coadds_sat(dither, rotate):
 
 
 if __name__ == '__main__':
-    test_coadds_boundary(rotate=True)
+    test_coadds_mfrac(dither=True, rotate=True)
+    # test_coadds_boundary(rotate=True)
     # test_coadds_smoke(False, False)
