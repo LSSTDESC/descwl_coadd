@@ -336,6 +336,7 @@ def test_coadds_sat(dither, rotate):
 
         if wsat[0].size > 0:
             assert wint[0].size > 0, 'expected sat to be interpolated'
+            assert np.all(mask.array[wsat] & interp_flag != 0)
             somesat = True
             break
 
