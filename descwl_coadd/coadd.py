@@ -434,8 +434,6 @@ def interp_and_get_noise(exp, rng, remove_poisson, max_maskfrac):
             exp.mask.array[mfrac_msk] |= interp_flag
             noise_exp.mask.array[mfrac_msk] |= interp_flag
 
-            # import IPython
-            # IPython.embed()
             assert not np.any(np.isnan(exp.image.array[mfrac_msk]))
             assert not np.any(np.isnan(noise_exp.image.array[mfrac_msk]))
 
