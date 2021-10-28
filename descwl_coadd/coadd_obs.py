@@ -135,12 +135,15 @@ class CoaddObs(ngmix.Observation):
         w = np.where(var > 0)
         weight[w] = 1.0/var[w]
 
-        if wnf[0].size > 0:
-            # medval = np.sqrt(np.median(var[w]))
-            # weight[wbad] = medval
-            # TODO: add noise instead based on medval, need to send in rng
-            image[wnf] = 0.0
-            noise[wnf] = 0.0
+        # TODO
+        # gonna leave this commented since I don't remember why
+        # I did it
+        # if wnf[0].size > 0:
+        #     # medval = np.sqrt(np.median(var[w]))
+        #     # weight[wbad] = medval
+        #     # TODO: add noise instead based on medval, need to send in rng
+        #     image[wnf] = 0.0
+        #     noise[wnf] = 0.0
 
         cen = (np.array(image.shape)-1)/2
         jac = self._get_jac(cenx=cen[1], ceny=cen[0])
