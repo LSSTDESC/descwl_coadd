@@ -13,26 +13,25 @@ from . import vis
 from .interp import interpolate_image_and_noise
 from .util import get_coadd_center
 from .coadd_obs import CoaddObs
+from .exceptions import WarpBoundaryError
+from .procflags import HIGH_MASKFRAC, WARP_BOUNDARY
+from .defaults import (
+    DEFAULT_INTERP,
+    FLAGS2INTERP,
+    BOUNDARY_BIT_NAME,
+    BOUNDARY_SIZE,
+    MAX_MASKFRAC,
+)
 from esutil.pbar import PBar
 import logging
 
 LOG = logging.getLogger('descwl_coadd.coadd')
 
-DEFAULT_INTERP = 'lanczos3'
 
-# areas in the image with these flags set will get interpolated note BRIGHT
-# must be added to the mask plane by the caller
-
-FLAGS2INTERP = ('BAD', 'CR', 'SAT', 'BRIGHT')
-
-BOUNDARY_BIT_NAME = 'BOUNDARY'
-BOUNDARY_SIZE = 3
-
-HIGH_MASKFRAC = 2**0
-WARP_HAS_EDGE = 2**1
-
-
-def make_coadd_obs(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
+def make_coadd_obs(
+    exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson,
+    max_maskfrac=MAX_MASKFRAC,
+):
     """
     Make a coadd from the input exposures and store in a CoaddObs, which
     inherits from ngmix.Observation. See make_coadd for docs on online
@@ -53,11 +52,18 @@ def make_coadd_obs(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
     remove_poisson: bool
         If True, remove the poisson noise from the variance
         estimate.
+    max_maskfrac: float
+        Maximum allowed masked fraction.  Images masked more than
+        this will not be included in the coadd.
 
     Returns
     -------
-    CoaddObs (inherits from ngmix.Observation) or None if no exposures
-    were deemed valid
+    CoaddObs, exp_info
+        CoaddObs inherits from ngmix.Observation
+
+        exp_info is keyed by exposure id with each entry
+        a dict holding info about the processing.  These are currently
+            flags: zero if the exposure was kept
     """
 
     coadd_data = make_coadd(
@@ -66,20 +72,24 @@ def make_coadd_obs(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
         rng=rng, remove_poisson=remove_poisson,
     )
 
+    exp_info = coadd_data['exp_info']
+
     if coadd_data['nkept'] == 0:
-        return None
+        coadd_obs = None
+    else:
+        coadd_obs = CoaddObs(
+            coadd_exp=coadd_data["coadd_exp"],
+            coadd_noise_exp=coadd_data["coadd_noise_exp"],
+            coadd_psf_exp=coadd_data["coadd_psf_exp"],
+            coadd_mfrac_exp=coadd_data["coadd_mfrac_exp"],
+        )
+    return coadd_obs, exp_info
 
-    coadd_obs = CoaddObs(
-        coadd_exp=coadd_data["coadd_exp"],
-        coadd_noise_exp=coadd_data["coadd_noise_exp"],
-        coadd_psf_exp=coadd_data["coadd_psf_exp"],
-        coadd_mfrac_exp=coadd_data["coadd_mfrac_exp"],
-    )
-    coadd_obs.meta['flagdict'] = coadd_data['flagdict']
-    return coadd_obs
 
-
-def make_coadd(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
+def make_coadd(
+    exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson,
+    max_maskfrac=MAX_MASKFRAC,
+):
     """
     make a coadd from the input exposures, working in "online mode",
     adding each exposure separately.  This saves memory when
@@ -100,6 +110,9 @@ def make_coadd(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
     remove_poisson: bool
         If True, remove the poisson noise from the variance
         estimate.
+    max_maskfrac: float
+        Maximum allowed masked fraction.  Images masked more than
+        this will not be included in the coadd.
 
     Returns
     -------
@@ -166,21 +179,30 @@ def make_coadd(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
 
     verify = [True, True, False, True]
 
-    nkept = 0
     LOG.info('warping and adding exposures')
 
     # TODO use exp.getId() when it arrives in weekly 44.  For now use an index
     # 0::len(exps)
-    flagdict = {}
-    for expid, exp_or_ref in enumerate(PBar(exps)):
-        exp, noise_exp, medvar, mfrac_exp = get_exp_and_noise(
-            exp_or_ref=exp_or_ref, rng=rng, remove_poisson=remove_poisson,
+    exp_info = {}
+
+    for exp_id, exp_or_ref in enumerate(PBar(exps)):
+
+        if isinstance(exp_or_ref, DeferredDatasetHandle):
+            exp = exp_or_ref.get()
+        else:
+            exp = exp_or_ref
+
+        # exp_id = exp.getId()
+        exp_info[exp_id] = {'flags': 0}
+
+        # exp is modified internally
+        noise_exp, medvar, mfrac_exp, maskfrac = interp_and_get_noise(
+            exp=exp, rng=rng, remove_poisson=remove_poisson,
+            max_maskfrac=max_maskfrac,
         )
-
-        flagdict[expid] = 0
-
-        if exp is None:
-            flagdict[expid] |= HIGH_MASKFRAC
+        exp_info[exp_id]['maskfrac'] = maskfrac
+        if noise_exp is None:
+            exp_info[exp_id]['flags'] |= HIGH_MASKFRAC
             continue
 
         psf_exp = get_psf_exp(
@@ -191,26 +213,25 @@ def make_coadd(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
 
         assert psf_exp.variance.array[0, 0] == noise_exp.variance.array[0, 0]
 
-        weight = 1/medvar
-
         # order must match stackers, wcss, bboxes, warpers
         exps2add = [exp, noise_exp, psf_exp, mfrac_exp]
 
-        warps = get_warps(exps2add, wcss, bboxes, warpers)
+        try:
+            # Use an exception as a easy way to guarantee that if one fails to
+            # verify we skip the whole set for coaddition
+            warps = get_warps(exps2add, wcss, bboxes, warpers, verify)
 
-        check_ok = [
-            verify_warp(_warp)
-            for _warp, _verify in zip(warps, verify) if _verify
-        ]
-
-        if all(check_ok):
-            nkept += 1
+            weight = 1/medvar
             add_all(stackers, warps, weight)
-        else:
-            flagdict[expid] |= WARP_HAS_EDGE
-            continue
 
-    result = dict(nkept=nkept, flagdict=flagdict)
+        except WarpBoundaryError as err:
+            LOG.info('%s', err)
+            exp_info[exp_id]['flags'] |= WARP_BOUNDARY
+
+    nkept = len(
+        [v for k, v in exp_info.items() if v['flags'] == 0]
+    )
+    result = {'nkept': nkept, 'exp_info': exp_info}
 
     if nkept > 0:
 
@@ -228,12 +249,12 @@ def make_coadd(exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson):
         coadd_exp.setPsf(psf)
         coadd_noise_exp.setPsf(psf)
 
-        result.update(dict(
-            coadd_exp=coadd_exp,
-            coadd_noise_exp=coadd_noise_exp,
-            coadd_psf_exp=coadd_psf_exp,
-            coadd_mfrac_exp=coadd_mfrac_exp,
-        ))
+        result.update({
+            'coadd_exp': coadd_exp,
+            'coadd_noise_exp': coadd_noise_exp,
+            'coadd_psf_exp': coadd_psf_exp,
+            'coadd_mfrac_exp': coadd_mfrac_exp,
+        })
 
     return result
 
@@ -267,20 +288,28 @@ def verify_warp(exp):
     exp: afw.image.ExposureF
         The exposure to check
 
-    Returns
-    -------
-    True if no boundary pixels were found
+    Raises
+    ------
+    WarpBoundaryError
     """
 
-    flagval = exp.mask.getPlaneBitMask([BOUNDARY_BIT_NAME, 'NO_DATA'])
-    if np.any(exp.mask.array & flagval != 0):
-        # TODO sprint week keep track of what gets left out Jim/Arun
-        LOG.info('skipping warp that includes boundary pixels')
+    tocheck = [BOUNDARY_BIT_NAME, 'NO_DATA']
+    all_flags = exp.mask.getPlaneBitMask(tocheck)
+
+    if np.any(exp.mask.array & all_flags != 0):
+        # give fine grained feedback on what happened
+        message = []
+        for flagname in tocheck:
+            w = np.where(exp.mask.array & all_flags != 0)
+            if w[0].size > 0:
+                message += [
+                    f'{w[0].size} pixels with {flagname}'
+                ]
+            message = ' and '.join(message)
+            raise WarpBoundaryError(message)
+
         if False:
             vis.show_image_and_mask(exp)
-        return False
-    else:
-        return True
 
 
 def make_coadd_exposure(coadd_bbox, coadd_wcs, filter_label):
@@ -348,7 +377,7 @@ def extract_coadd_psf(coadd_psf_exp):
     )
 
 
-def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
+def interp_and_get_noise(exp, rng, remove_poisson, max_maskfrac):
     """
     get the exposure (possibly from a deferred handle) and create
     a corresponding noise exposure
@@ -360,21 +389,27 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
 
     Parameters
     ----------
-    exp_or_ref: afw_image.ExposureF or DeferredDatasetHandle
-        The input exposure, possible deferred
+    exp: afw_image.ExposureF
+        The input exposure.  This is modified in place.
+    rng: np.random.RandomState
+        Used for generating the noise exposure
+    remove_poisson: bool
+        If True, remove the poisson noise from the variance estimate
+    max_maskfrac: float
+        Maximum allowed masked fraction.  Images masked more than
+        this will not be included in the coadd.
 
     Returns
     -------
-    exp, noise_exp, medvar, mfrac_exp
-        where medvar is the median of the variance for the exposure
-        and mfrac_exp is an image of zeros and ones indicating interpolated pixels
+    noise_exp, medvar, mfrac_exp
+        where medvar is the median of the variance for the exposure and
+        mfrac_exp is an image of zeros and ones indicating interpolated pixels
+
+        If the image is too heavily masked, None, None, None is returned
     """
-    if isinstance(exp_or_ref, DeferredDatasetHandle):
-        exp = exp_or_ref.get()
-    else:
-        exp = exp_or_ref
 
     mdict = exp.mask.getMaskPlaneDict()
+
     if 'BRIGHT' not in mdict:
         # this adds it globally too
         exp.mask.addMaskPlane("BRIGHT")
@@ -387,25 +422,27 @@ def get_exp_and_noise(exp_or_ref, rng, remove_poisson):
     )
 
     flags2interp = exp.mask.getPlaneBitMask(FLAGS2INTERP)
-    iimage, inoise, mfrac_msk = interpolate_image_and_noise(
+    iimage, inoise, mfrac_msk, maskfrac = interpolate_image_and_noise(
         image=exp.image.array,
         noise=noise_exp.image.array,
         weight=weight,
         bmask=exp.mask.array,
         bad_flags=flags2interp,
+        max_maskfrac=max_maskfrac,
     )
     if iimage is None:
-        return None, None, None, None
+        return None, None, None, maskfrac
+    else:
 
-    exp.image.array[:, :] = iimage
-    noise_exp.image.array[:, :] = inoise
+        exp.image.array[:, :] = iimage
+        noise_exp.image.array[:, :] = inoise
 
-    mfrac_exp = make_mfrac_exp(mfrac_msk=mfrac_msk, exp=exp)
+        mfrac_exp = make_mfrac_exp(mfrac_msk=mfrac_msk, exp=exp)
 
-    add_boundary_bit(exp)
-    add_boundary_bit(noise_exp)
+        add_boundary_bit(exp)
+        add_boundary_bit(noise_exp)
 
-    return exp, noise_exp, medvar, mfrac_exp
+        return noise_exp, medvar, mfrac_exp, maskfrac
 
 
 def make_mfrac_exp(*, mfrac_msk, exp):
@@ -449,7 +486,7 @@ def add_all(stackers, warps, weight):
         _stacker.add_masked_image(_warp, weight=weight)
 
 
-def get_warps(exps, wcss, bboxes, warpers):
+def get_warps(exps, wcss, bboxes, warpers, verify):
     """
     get a list of all warps for the input
 
@@ -470,8 +507,12 @@ def get_warps(exps, wcss, bboxes, warpers):
         List of warped exposures
     """
     warps = []
-    for _exp, _wcs, _bbox, _warper in zip(exps, wcss, bboxes, warpers):
+    for _exp, _wcs, _bbox, _warper, _verify in zip(
+        exps, wcss, bboxes, warpers, verify
+    ):
         warp = get_warp(_warper, _exp, _wcs, _bbox)
+        if _verify:
+            verify_warp(warp)
         warps.append(warp)
 
     return warps
