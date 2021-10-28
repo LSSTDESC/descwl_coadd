@@ -160,7 +160,7 @@ def test_coadd_image_correct(crazy_wcs, crazy_obj):
         geom.IntervalI(min=0, max=coadd_dim-1),
         geom.IntervalI(min=0, max=coadd_dim-1),
     )
-    coadd = make_coadd_obs(
+    coadd, exp_info = make_coadd_obs(
         exps=exps,
         coadd_wcs=make_dm_wcs(coadd_wcs),
         coadd_bbox=coadd_bbox,

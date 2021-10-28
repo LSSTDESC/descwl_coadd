@@ -33,13 +33,17 @@ def test_cosmics():
         epochs_per_band=10,  # so we get a CR
         cosmic_rays=True,
     )
-    coadd = make_coadd_obs(
+    coadd, exp_info = make_coadd_obs(
         exps=data['band_data']['i'],
         coadd_wcs=data['coadd_wcs'],
         coadd_bbox=data['coadd_bbox'],
         psf_dims=data['psf_dims'],
         rng=rng,
         remove_poisson=False,  # no object poisson noise in sims
+    )
+
+    assert any(
+        [v['maskfrac'] > 0 for k, v in exp_info.items()]
     )
 
     cosmic_flag = coadd.coadd_exp.mask.getPlaneBitMask('CR')

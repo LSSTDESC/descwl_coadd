@@ -3,6 +3,7 @@ import numpy as np
 from descwl_coadd.interp import (
     replace_flag_with_noise, interpolate_image_and_noise,
 )
+from descwl_coadd.defaults import MAX_MASKFRAC
 
 
 def test_replace_bright_with_noise():
@@ -68,13 +69,17 @@ def test_interpolate_image_and_noise_weight():
 
     rng = np.random.RandomState(seed=42)
     noise = rng.normal(size=image.shape)
-    iimage, inoise, imsk = interpolate_image_and_noise(
+    iimage, inoise, imsk, maskfrac = interpolate_image_and_noise(
         image=image,
         weight=weight,
         bmask=bmask,
         bad_flags=bad_flags,
-        noise=noise)
+        noise=noise,
+        max_maskfrac=MAX_MASKFRAC,
+    )
 
+    wmsk = np.where(msk)
+    assert maskfrac == wmsk[0].size / image.size
     assert np.allclose(iimage, 10 + x*5)
     assert np.array_equal(msk, imsk)
 
@@ -105,13 +110,17 @@ def test_interpolate_image_and_noise_bmask():
 
     rng = np.random.RandomState(seed=42)
     noise = rng.normal(size=image.shape)
-    iimage, inoise, imsk = interpolate_image_and_noise(
+    iimage, inoise, imsk, maskfrac = interpolate_image_and_noise(
         image=image,
         weight=weight,
         bmask=bmask,
         bad_flags=bad_flags,
-        noise=noise)
+        noise=noise,
+        max_maskfrac=MAX_MASKFRAC,
+    )
 
+    wmsk = np.where(msk)
+    assert maskfrac == wmsk[0].size / image.size
     assert np.allclose(iimage, 10 + x*5)
     assert np.array_equal(msk, imsk)
 
@@ -137,12 +146,17 @@ def test_interpolate_image_and_noise_big_missing():
     msk = (bmask & bad_flags) != 0
     image[msk] = np.nan
 
-    iimage, inoise, imsk = interpolate_image_and_noise(
+    iimage, inoise, imsk, maskfrac = interpolate_image_and_noise(
         image=image,
         weight=weight,
         bmask=bmask,
         bad_flags=bad_flags,
-        noise=nse)
+        noise=nse,
+        max_maskfrac=MAX_MASKFRAC,
+    )
+
+    wmsk = np.where(msk)
+    assert maskfrac == wmsk[0].size / image.size
 
     # interp will be waaay off but shpuld have happened
     assert np.all(np.isfinite(iimage))
@@ -192,12 +206,13 @@ def test_interpolate_gauss_image(show=False):
     bmask = np.zeros_like(image_unmasked, dtype=np.int32)
     bad_flags = 0
 
-    iimage, inoise, imsk = interpolate_image_and_noise(
+    iimage, inoise, imsk, maskfrac = interpolate_image_and_noise(
         image=image_masked,
         weight=weight,
         bmask=bmask,
         bad_flags=bad_flags,
         noise=noise_image,
+        max_maskfrac=MAX_MASKFRAC,
     )
 
     maxdiff = np.abs(image_unmasked-iimage).max()

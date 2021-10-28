@@ -8,6 +8,7 @@ from descwl_shear_sims.psfs import make_fixed_psf, make_ps_psf
 from descwl_shear_sims.stars import StarCatalog
 
 from descwl_coadd.coadd import make_coadd_obs, make_coadd
+from descwl_coadd.procflags import WARP_BOUNDARY
 from descwl_shear_sims.galaxies import make_galaxy_catalog
 import logging
 
@@ -94,7 +95,7 @@ def test_coadds_smoke(dither, rotate):
         assert band in bdata
         exps = bdata[band]
 
-        coadd = make_coadd_obs(
+        coadd, exp_info = make_coadd_obs(
             exps=exps,
             coadd_wcs=sim_data['coadd_wcs'],
             coadd_bbox=sim_data['coadd_bbox'],
@@ -136,7 +137,7 @@ def test_coadds_mfrac(dither, rotate):
             assert band in bdata
             exps = bdata[band]
 
-            coadd = make_coadd_obs(
+            coadd, exp_info = make_coadd_obs(
                 exps=exps,
                 coadd_wcs=sim_data['coadd_wcs'],
                 coadd_bbox=sim_data['coadd_bbox'],
@@ -197,7 +198,7 @@ def test_coadds_noise(dither, rotate):
         assert band in bdata
         exps = bdata[band]
 
-        coadd = make_coadd_obs(
+        coadd, exp_info = make_coadd_obs(
             exps=exps,
             coadd_wcs=sim_data['coadd_wcs'],
             coadd_bbox=sim_data['coadd_bbox'],
@@ -267,10 +268,12 @@ def test_coadds_boundary(rotate):
         else:
             if coadd_dict['nkept'] != epochs_per_band:
                 ngood = 0
-                if coadd_dict is not None:
-                    for expid, flagval in coadd_dict['flagdict'].items():
-                        if flagval == 0:
-                            ngood += 1
+                for expid, info in coadd_dict['exp_info'].items():
+                    if info['flags'] == 0:
+                        ngood += 1
+                    else:
+                        assert info['flags'] & WARP_BOUNDARY != 0
+
                     assert ngood == coadd_dict['nkept']
                 ok = True
             break
@@ -309,7 +312,7 @@ def test_coadds_bright(dither, rotate):
 
         exps = sim_data['band_data'][band]
 
-        coadd = make_coadd_obs(
+        coadd, exp_info = make_coadd_obs(
             exps=exps,
             coadd_wcs=sim_data['coadd_wcs'],
             coadd_bbox=sim_data['coadd_bbox'],
@@ -320,10 +323,6 @@ def test_coadds_bright(dither, rotate):
 
         if False:
             import lsst.afw.display as afw_display
-            # exp = exps[0]
-            # display = afw_display.getDisplay(backend='ds9')
-            # display.mtv(exp)
-            # display.scale('log', 'minmax')
 
             display = afw_display.getDisplay(backend='ds9')
             display.mtv(coadd.coadd_exp)
@@ -351,5 +350,5 @@ def test_coadds_bright(dither, rotate):
 
 
 if __name__ == '__main__':
-    # test_coadds_boundary(rotate=True)
-    test_coadds_smoke(False, False)
+    test_coadds_boundary(rotate=True)
+    # test_coadds_smoke(False, False)

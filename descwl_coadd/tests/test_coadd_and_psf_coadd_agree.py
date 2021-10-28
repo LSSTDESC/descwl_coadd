@@ -126,7 +126,7 @@ def test_coadd_psf(show=False):
             survey = get_survey(gal_type='fixed', band=band)
             star_flux = survey.get_flux(cat.mag)
 
-            coadd = make_coadd_obs(
+            coadd, exp_info = make_coadd_obs(
                 exps=exps,
                 coadd_wcs=sim_data['coadd_wcs'],
                 coadd_bbox=sim_data['coadd_bbox'],

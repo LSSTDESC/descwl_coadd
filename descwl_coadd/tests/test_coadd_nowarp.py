@@ -77,7 +77,7 @@ def test_coadd_nowarp_smoke():
 
     exp = sim_data['band_data'][bands[0]][0]
 
-    coadd = make_coadd_obs_nowarp(
+    coadd, exp_info = make_coadd_obs_nowarp(
         exp=exp,
         psf_dims=sim_data['psf_dims'],
         rng=rng,
@@ -111,11 +111,15 @@ def test_coadds_mfrac():
 
     exp = sim_data['band_data'][bands[0]][0]
 
-    coadd = make_coadd_obs_nowarp(
+    coadd, exp_info = make_coadd_obs_nowarp(
         exp=exp,
         psf_dims=sim_data['psf_dims'],
         rng=rng,
         remove_poisson=False,  # no object poisson noise in sims
+    )
+
+    assert any(
+        [v['maskfrac'] > 0 for k, v in exp_info.items()]
     )
 
     assert not np.all(coadd.mfrac == 0)
@@ -142,7 +146,7 @@ def test_coadds_noise():
 
     exp = sim_data['band_data'][bands[0]][0]
 
-    coadd = make_coadd_obs_nowarp(
+    coadd, exp_info = make_coadd_obs_nowarp(
         exp=exp,
         psf_dims=sim_data['psf_dims'],
         rng=rng,
@@ -185,7 +189,7 @@ def test_coadds_bright():
 
         exp = sim_data['band_data'][band][0]
 
-        coadd = make_coadd_obs_nowarp(
+        coadd, exp_info = make_coadd_obs_nowarp(
             exp=exp,
             psf_dims=sim_data['psf_dims'],
             rng=rng,
