@@ -111,6 +111,8 @@ def test_coadd_psf(show=False):
 
     This is a crucial test of the conventions used for the wcs, bounding
     boxes, and the dithers
+
+    huge props to Eli R. for suggesting this test!
     """
     rng = np.random.RandomState(995)
 
