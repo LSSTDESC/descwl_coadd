@@ -61,9 +61,8 @@ def make_coadd_obs(
     CoaddObs, exp_info
         CoaddObs inherits from ngmix.Observation
 
-        exp_info is keyed by exposure id with each entry
-        a dict holding info about the processing.  These are currently
-            flags: zero if the exposure was kept
+        exp_info structured array with fields 'exp_id', 'flags', 'maskfrac'
+            Flags are set to non zero for skipped exposures
     """
 
     coadd_data = make_coadd(
@@ -183,9 +182,9 @@ def make_coadd(
 
     # TODO use exp.getId() when it arrives in weekly 44.  For now use an index
     # 0::len(exps)
-    exp_info = {}
+    exp_info = get_info_struct(len(exps))
 
-    for exp_id, exp_or_ref in enumerate(PBar(exps)):
+    for iexp, exp_or_ref in enumerate(PBar(exps)):
 
         if isinstance(exp_or_ref, DeferredDatasetHandle):
             exp = exp_or_ref.get()
@@ -193,16 +192,17 @@ def make_coadd(
             exp = exp_or_ref
 
         # exp_id = exp.getId()
-        exp_info[exp_id] = {'flags': 0}
+        exp_info['exp_id'][iexp] = iexp
 
         # exp is modified internally
         noise_exp, medvar, mfrac_exp, maskfrac = interp_and_get_noise(
             exp=exp, rng=rng, remove_poisson=remove_poisson,
             max_maskfrac=max_maskfrac,
         )
-        exp_info[exp_id]['maskfrac'] = maskfrac
+        exp_info['maskfrac'][iexp] = maskfrac
         if noise_exp is None:
-            exp_info[exp_id]['flags'] |= HIGH_MASKFRAC
+            assert maskfrac > max_maskfrac
+            exp_info['flags'][iexp] |= HIGH_MASKFRAC
             continue
 
         psf_exp = get_psf_exp(
@@ -226,11 +226,10 @@ def make_coadd(
 
         except WarpBoundaryError as err:
             LOG.info('%s', err)
-            exp_info[exp_id]['flags'] |= WARP_BOUNDARY
+            exp_info['flags'][iexp] |= WARP_BOUNDARY
 
-    nkept = len(
-        [v for k, v in exp_info.items() if v['flags'] == 0]
-    )
+    wkept, = np.where(exp_info['flags'] == 0)
+    nkept = wkept.size
     result = {'nkept': nkept, 'exp_info': exp_info}
 
     if nkept > 0:
@@ -253,6 +252,15 @@ def make_coadd(
         })
 
     return result
+
+
+def get_info_struct(n=1):
+    dt = [
+        ('exp_id', 'i8'),
+        ('flags', 'i4'),
+        ('maskfrac', 'f4'),
+    ]
+    return np.zeros(n, dtype=dt)
 
 
 def add_boundary_bit(exp):

@@ -109,10 +109,6 @@ def do_interp(*, image, bad_msk, max_maskfrac):
     -------
     interpolated image: ndarray
         The interpolated image
-
-    Raises
-    ------
-    HighMaskedFraction
     """
 
     nrows, ncols = image.shape

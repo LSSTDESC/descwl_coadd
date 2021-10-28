@@ -42,9 +42,7 @@ def test_cosmics():
         remove_poisson=False,  # no object poisson noise in sims
     )
 
-    assert any(
-        [v['maskfrac'] > 0 for k, v in exp_info.items()]
-    )
+    assert any(exp_info['maskfrac'] > 0)
 
     cosmic_flag = coadd.coadd_exp.mask.getPlaneBitMask('CR')
 

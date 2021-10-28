@@ -5,6 +5,7 @@ from .coadd import (
     get_coadd_center,
     interp_and_get_noise,
     get_psf_exp,
+    get_info_struct,
 )
 from .defaults import MAX_MASKFRAC
 
@@ -34,9 +35,8 @@ def make_coadd_obs_nowarp(exp, psf_dims, rng, remove_poisson):
     CoaddObs, exp_info
         CoaddObs inherits from ngmix.Observation
 
-        exp_info is keyed by exposure id with each entry
-        a dict holding info about the processing.  These are currently
-            flags: zero if the exposure was kept
+        exp_info structured array with fields 'exp_id', 'flags', 'maskfrac'
+            Flags are set to non zero for skipped exposures
     """
 
     coadd_data = make_coadd_nowarp(
@@ -112,15 +112,14 @@ def make_coadd_nowarp(exp, psf_dims, rng, remove_poisson):
     )
 
     try:
-        expid = exp.getId()
+        exp_id = exp.getId()
     except AttributeError:
-        expid = rng.randint(0, 2**31)
+        exp_id = rng.randint(0, 2**31)
 
-    exp_info = {}
-    exp_info[expid] = {
-        'flags': 0,
-        'maskfrac': maskfrac,
-    }
+    exp_info = get_info_struct(1)
+    exp_info['exp_id'] = exp_id
+    exp_info['maskfrac'] = maskfrac
+
     return {
         'nkept': 1,
         'exp_info': exp_info,

@@ -117,13 +117,14 @@ def test_coadds_smoke(dither, rotate):
 @pytest.mark.parametrize('rotate', [False, True])
 def test_coadds_mfrac(dither, rotate):
     rng = np.random.RandomState(55)
+    ntrial = 100
 
     coadd_dim = 101
     psf_dim = 51
 
     bands = ['r', 'i', 'z']
 
-    while True:
+    for itrial in range(ntrial):
         sim_data = _make_sim(
             rng=rng, psf_type='gauss', bands=bands,
             coadd_dim=coadd_dim, psf_dim=psf_dim,
@@ -172,6 +173,8 @@ def test_coadds_mfrac(dither, rotate):
                 pdb.set_trace()
         if ok:
             break
+
+    assert ok, 'mfrac not set properly'
 
 
 @pytest.mark.parametrize('dither', [False, True])
@@ -267,18 +270,53 @@ def test_coadds_boundary(rotate):
             assert coadd_dict['nkept'] == epochs_per_band
         else:
             if coadd_dict['nkept'] != epochs_per_band:
-                ngood = 0
-                for expid, info in coadd_dict['exp_info'].items():
-                    if info['flags'] == 0:
-                        ngood += 1
-                    else:
-                        assert info['flags'] & WARP_BOUNDARY != 0
+                exp_info = coadd_dict['exp_info']
+                wbad, = np.where(exp_info['flags'] != 0)
+                ngood = exp_info.size - wbad.size
+                assert ngood == coadd_dict['nkept']
+                assert np.all(exp_info['flags'][wbad] & WARP_BOUNDARY != 0)
 
-                    assert ngood == coadd_dict['nkept']
                 ok = True
             break
 
     assert ok
+
+
+def test_coadds_not_used():
+    rng = np.random.RandomState(9312)
+
+    epochs_per_band = 3
+    sim_data = _make_sim(
+        rng=rng,
+        psf_type='gauss',
+        bands=['i'],
+        coadd_dim=101,
+        psf_dim=51,
+        epochs_per_band=epochs_per_band,
+    )
+
+    # TODO we don't have getId() yet, so assuming the first one is index 0 etc.
+    # for now
+    exps = sim_data['band_data']['i']
+    exp = exps[1]
+    flagval = exp.mask.getPlaneBitMask('BAD')
+
+    exp.mask.array[:, :] = flagval
+
+    coadd_dict = make_coadd(
+        exps=exps,
+        coadd_wcs=sim_data['coadd_wcs'],
+        coadd_bbox=sim_data['coadd_bbox'],
+        psf_dims=sim_data['psf_dims'],
+        rng=rng,
+        remove_poisson=False,  # no object poisson noise in sims
+    )
+
+    assert coadd_dict['nkept'] == epochs_per_band - 1
+    exp_info = coadd_dict['exp_info']
+    wbad, = np.where(exp_info['flags'] != 0)
+    assert wbad.size == 1
+    assert wbad[0] == 1
 
 
 @pytest.mark.skipif('CATSIM_DIR' not in os.environ,
