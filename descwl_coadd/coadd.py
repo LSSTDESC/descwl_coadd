@@ -221,12 +221,13 @@ def make_coadd(
             # verify we skip the whole set for coaddition
             warps = get_warps(exps2add, wcss, bboxes, warpers, verify)
 
-            weight = 1/medvar
-            add_all(stackers, warps, weight)
-
         except WarpBoundaryError as err:
             LOG.info('%s', err)
             exp_info['flags'][iexp] |= WARP_BOUNDARY
+
+        else:
+            weight = 1/medvar
+            add_all(stackers, warps, weight)
 
     wkept, = np.where(exp_info['flags'] == 0)
     nkept = wkept.size
