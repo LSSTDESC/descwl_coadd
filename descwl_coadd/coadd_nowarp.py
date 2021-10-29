@@ -1,12 +1,16 @@
 import logging
+from .coadd_obs import CoaddObs
 from .coadd import (
-    CoaddObs,
     check_psf_dims,
     get_coadd_center,
-    interp_and_get_noise,
+    get_noise_exp,
+    get_bad_mask,
+    make_mfrac_exp,
+    interp_nocheck,
     get_psf_exp,
     get_info_struct,
 )
+from .procflags import HIGH_MASKFRAC
 from .defaults import MAX_MASKFRAC
 
 LOG = logging.getLogger('descwl_coadd.coadd_nowarp')
@@ -97,34 +101,53 @@ def make_coadd_nowarp(exp, psf_dims, rng, remove_poisson):
 
     check_psf_dims(psf_dims)
 
-    noise_exp, medvar, mfrac_exp, maskfrac = interp_and_get_noise(
-        exp=exp, rng=rng, remove_poisson=remove_poisson,
-        max_maskfrac=MAX_MASKFRAC,
-    )
-    cen, cen_skypos = get_coadd_center(
-        coadd_wcs=exp.getWcs(), coadd_bbox=exp.getBBox(),
-    )
-
-    psf_exp = get_psf_exp(
-        exp=exp,
-        coadd_cen_skypos=cen_skypos,
-        var=medvar,
-    )
-
     try:
         exp_id = exp.getId()
     except AttributeError:
-        exp_id = rng.randint(0, 2**31)
+        exp_id = 0
 
     exp_info = get_info_struct(1)
     exp_info['exp_id'] = exp_id
+
+    nkept = 0
+
+    bad_msk, maskfrac = get_bad_mask(exp)
     exp_info['maskfrac'] = maskfrac
 
-    return {
-        'nkept': 1,
+    if maskfrac < MAX_MASKFRAC:
+
+        noise_exp, medvar = get_noise_exp(
+            exp=exp, rng=rng, remove_poisson=remove_poisson,
+        )
+        mfrac_exp = make_mfrac_exp(mfrac_msk=bad_msk, exp=exp)
+
+        if maskfrac > 0:
+            # images modified internally
+            interp_nocheck(exp=exp, noise_exp=noise_exp, bad_msk=bad_msk)
+
+        cen, cen_skypos = get_coadd_center(
+            coadd_wcs=exp.getWcs(), coadd_bbox=exp.getBBox(),
+        )
+
+        psf_exp = get_psf_exp(
+            exp=exp,
+            coadd_cen_skypos=cen_skypos,
+            var=medvar,
+        )
+        nkept += 1
+    else:
+        exp_info['flags'] |= HIGH_MASKFRAC
+
+    result = {
+        'nkept': nkept,
         'exp_info': exp_info,
-        'coadd_exp': exp,
-        'coadd_noise_exp': noise_exp,
-        'coadd_psf_exp': psf_exp,
-        'coadd_mfrac_exp': mfrac_exp,
     }
+    if nkept > 0:
+        result.update({
+            'coadd_exp': exp,
+            'coadd_noise_exp': noise_exp,
+            'coadd_psf_exp': psf_exp,
+            'coadd_mfrac_exp': mfrac_exp,
+        })
+
+    return result
