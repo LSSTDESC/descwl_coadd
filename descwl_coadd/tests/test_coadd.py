@@ -382,7 +382,7 @@ def test_coadds_sat(dither, rotate):
     assert somesat
 
 
-@pytest.mark.parametrize('max_maskfrac', [-1, 1.0])
+@pytest.mark.parametrize('max_maskfrac', [-1, 1.1])
 def test_coadds_bad_max_maskfrac(max_maskfrac):
     rng = np.random.RandomState(55)
 

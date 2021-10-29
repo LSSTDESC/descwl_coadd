@@ -55,7 +55,7 @@ def make_coadd_obs(
     max_maskfrac: float
         Maximum allowed masked fraction.  Images masked more than
         this will not be included in the coadd.  Must be in range
-        [0, 1)
+        [0, 1]
 
     Returns
     -------
@@ -114,7 +114,7 @@ def make_coadd(
     max_maskfrac: float
         Maximum allowed masked fraction.  Images masked more than
         this will not be included in the coadd.  Must be in range
-        [0, 1)
+        [0, 1]
 
     Returns
     -------
@@ -207,8 +207,8 @@ def make_coadd(
 
         exp_info['maskfrac'][iexp] = maskfrac
 
-        if maskfrac > max_maskfrac:
-            LOG.info(f'skipping {exp_id} maskfrac {maskfrac} > {max_maskfrac}')
+        if maskfrac >= max_maskfrac:
+            LOG.info(f'skipping {exp_id} maskfrac {maskfrac} >= {max_maskfrac}')
             exp_info['flags'][iexp] |= HIGH_MASKFRAC
             continue
 
@@ -800,7 +800,7 @@ def check_max_maskfrac(max_maskfrac):
     practically the limit where the interp fails is certainly
     lower than 1-epsilon
     """
-    if max_maskfrac < 0 or max_maskfrac >= 1.0:
+    if max_maskfrac < 0 or max_maskfrac > 1:
         raise ValueError(
-            'got max_maskfrac {max_maskfrac} outside allowed range [0, 1)'
+            'got max_maskfrac {max_maskfrac} outside allowed range [0, 1]'
         )
