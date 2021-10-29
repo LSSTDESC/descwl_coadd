@@ -149,7 +149,6 @@ def test_interpolate_gauss_image(show=False):
     piece missing from a gaussian image
     """
 
-    rng = np.random.RandomState(seed=31415)
     noise = 0.001
 
     sigma = 4.0
@@ -166,8 +165,6 @@ def test_interpolate_gauss_image(show=False):
 
     image_unmasked = np.exp(-0.5*(rows**2 + cols**2)*is2)
     weight = image_unmasked*0 + 1.0/noise**2
-
-    noise_image = rng.normal(scale=noise, size=image_unmasked.shape)
 
     badcol = int(cen[1]-3)
     bw = 3
