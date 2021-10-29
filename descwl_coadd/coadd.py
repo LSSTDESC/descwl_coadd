@@ -10,7 +10,7 @@ from lsst.meas.algorithms import KernelPsf
 from lsst.afw.math import FixedKernel
 
 from . import vis
-from .interp import interpolate_image_and_noise
+from .interp import interp_image_nocheck
 from .util import get_coadd_center
 from .coadd_obs import CoaddObs
 from .exceptions import WarpBoundaryError
@@ -176,7 +176,7 @@ def make_coadd(
     # stamp size for input and output psf and just zero out wherever there is
     # no data
 
-    verify = [True, True, False, True]
+    verifys = [True, True, False, True]
 
     LOG.info('warping and adding exposures')
 
@@ -191,35 +191,51 @@ def make_coadd(
         else:
             exp = exp_or_ref
 
-        # exp_id = exp.getId()
+        try:
+            exp_id = exp.getId()
+        except AttributeError:
+            exp_id = iexp
+
         exp_info['exp_id'][iexp] = iexp
 
-        # exp is modified internally
-        noise_exp, medvar, mfrac_exp, maskfrac = interp_and_get_noise(
-            exp=exp, rng=rng, remove_poisson=remove_poisson,
-            max_maskfrac=max_maskfrac,
-        )
+        bad_msk, maskfrac = get_bad_mask(exp)
+
         exp_info['maskfrac'][iexp] = maskfrac
-        if noise_exp is None:
-            assert maskfrac > max_maskfrac
+
+        if maskfrac > max_maskfrac:
+            LOG.info(f'skipping {exp_id} maskfrac {maskfrac} > {MAX_MASKFRAC}')
             exp_info['flags'][iexp] |= HIGH_MASKFRAC
             continue
+
+        noise_exp, medvar = get_noise_exp(
+            exp=exp, rng=rng, remove_poisson=remove_poisson,
+        )
+
+        mfrac_exp = make_mfrac_exp(mfrac_msk=bad_msk, exp=exp)
+
+        if maskfrac > 0:
+            # images modified internally
+            interp_nocheck(exp=exp, noise_exp=noise_exp, bad_msk=bad_msk)
 
         psf_exp = get_psf_exp(
             exp=exp,
             coadd_cen_skypos=coadd_cen_skypos,
             var=medvar,
         )
-
         assert psf_exp.variance.array[0, 0] == noise_exp.variance.array[0, 0]
 
-        # order must match stackers, wcss, bboxes, warpers
+        # we use this to check no edges made it into the coadd
+        add_boundary_bit(exp)
+        add_boundary_bit(noise_exp)
+
+        # order must match stackers, wcss, bboxes, warpers, verifys
         exps2add = [exp, noise_exp, psf_exp, mfrac_exp]
 
         try:
+            # the verify checks boundary/NO_DATA
             # Use an exception as a easy way to guarantee that if one fails to
             # verify we skip the whole set for coaddition
-            warps = get_warps(exps2add, wcss, bboxes, warpers, verify)
+            warps = get_warps(exps2add, wcss, bboxes, warpers, verifys)
 
         except WarpBoundaryError as err:
             LOG.info('%s', err)
@@ -382,71 +398,68 @@ def extract_coadd_psf(coadd_psf_exp):
     )
 
 
-def interp_and_get_noise(exp, rng, remove_poisson, max_maskfrac):
+def get_bad_mask(exp):
     """
-    get the exposure (possibly from a deferred handle) and create
-    a corresponding noise exposure
+    get the bad mask and masked fraction
 
-    Artifacts are interpolated and the bit INTRP is set
+    Parameters
+    ----------
+    exp: lsst.afw.ExposureF
+        The exposure data
+
+    Returns
+    -------
+    bad_msk: ndarray
+        A bool array with True if weight <= 0 or defaults.FLAGS2INTERP
+        is set
+    maskfrac: float
+        The masked fraction
+    """
+    var = exp.variance.array
+    weight = 1/var
+
+    bmask = exp.mask.array
+
+    flags2interp = exp.mask.getPlaneBitMask(FLAGS2INTERP)
+    bad_msk = (weight <= 0) | ((bmask & flags2interp) != 0)
+
+    npix = bad_msk.size
+
+    nbad = bad_msk.sum()
+    maskfrac = nbad/npix
+
+    return bad_msk, maskfrac
+
+
+def interp_nocheck(exp, noise_exp, bad_msk):
+    """
+    Interpolate the exposure and noise exposure, modifying
+    them in place
+
+    The bit INTRP is set
 
     Parameters
     ----------
     exp: afw_image.ExposureF
         The input exposure.  This is modified in place.
-    rng: np.random.RandomState
-        Used for generating the noise exposure
-    remove_poisson: bool
-        If True, remove the poisson noise from the variance estimate
-    max_maskfrac: float
-        Maximum allowed masked fraction.  Images masked more than
-        this will not be included in the coadd.
-
-    Returns
-    -------
-    noise_exp, medvar, mfrac_exp
-        where medvar is the median of the variance for the exposure and
-        mfrac_exp is an image of zeros and ones indicating interpolated pixels
-
-        If the image is too heavily masked, None, None, None is returned
+    noise_exp: afw_image.ExposureF
+        The input noise exposure.  This is modified in place.
+    bad_msk: array
+        A bool array with True set for masked pixels
     """
 
-    var = exp.variance.array
-    weight = 1/var
+    iimage = interp_image_nocheck(image=exp.image.array, bad_msk=bad_msk)
+    inoise = interp_image_nocheck(image=noise_exp.image.array, bad_msk=bad_msk)
 
-    noise_exp, medvar = get_noise_exp(
-        exp=exp, rng=rng, remove_poisson=remove_poisson,
-    )
+    exp.image.array[:, :] = iimage
+    noise_exp.image.array[:, :] = inoise
 
-    flags2interp = exp.mask.getPlaneBitMask(FLAGS2INTERP)
-    iimage, inoise, mfrac_msk, maskfrac = interpolate_image_and_noise(
-        image=exp.image.array,
-        noise=noise_exp.image.array,
-        weight=weight,
-        bmask=exp.mask.array,
-        bad_flags=flags2interp,
-        max_maskfrac=max_maskfrac,
-    )
-    if iimage is None:
-        return None, None, None, maskfrac
-    else:
+    interp_flag = exp.mask.getPlaneBitMask('INTRP')
+    exp.mask.array[bad_msk] |= interp_flag
+    noise_exp.mask.array[bad_msk] |= interp_flag
 
-        exp.image.array[:, :] = iimage
-        noise_exp.image.array[:, :] = inoise
-
-        mfrac_exp = make_mfrac_exp(mfrac_msk=mfrac_msk, exp=exp)
-
-        add_boundary_bit(exp)
-        add_boundary_bit(noise_exp)
-
-        if maskfrac > 0:
-            interp_flag = exp.mask.getPlaneBitMask('INTRP')
-            exp.mask.array[mfrac_msk] |= interp_flag
-            noise_exp.mask.array[mfrac_msk] |= interp_flag
-
-            assert not np.any(np.isnan(exp.image.array[mfrac_msk]))
-            assert not np.any(np.isnan(noise_exp.image.array[mfrac_msk]))
-
-        return noise_exp, medvar, mfrac_exp, maskfrac
+    assert not np.any(np.isnan(exp.image.array[bad_msk]))
+    assert not np.any(np.isnan(noise_exp.image.array[bad_msk]))
 
 
 def make_mfrac_exp(*, mfrac_msk, exp):
