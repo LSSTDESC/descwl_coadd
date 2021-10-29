@@ -1,9 +1,11 @@
 import numpy as np
 
-from ..interp import replace_flag_with_noise, interpolate_image_and_noise
+from descwl_coadd.interp import (
+    replace_flag_with_noise, interp_image_nocheck,
+)
 
 
-def test_replace_bright_with_noise():
+def test_replace_flag_with_noise():
     shape = (10, 10)
     err = 0.1
     rng = np.random.RandomState(seed=42)
@@ -64,17 +66,14 @@ def test_interpolate_image_and_noise_weight():
     msk = weight <= 0
     image[msk] = np.nan
 
+    msk = (weight <= 0) | ((bmask & bad_flags) != 0)
+
     rng = np.random.RandomState(seed=42)
     noise = rng.normal(size=image.shape)
-    iimage, inoise, imsk = interpolate_image_and_noise(
-        image=image,
-        weight=weight,
-        bmask=bmask,
-        bad_flags=bad_flags,
-        noise=noise)
+    iimage = interp_image_nocheck(image=image, bad_msk=msk)
+    inoise = interp_image_nocheck(image=noise, bad_msk=msk)
 
     assert np.allclose(iimage, 10 + x*5)
-    assert np.array_equal(msk, imsk)
 
     # make sure noise field was inteprolated
     rng = np.random.RandomState(seed=42)
@@ -98,20 +97,16 @@ def test_interpolate_image_and_noise_bmask():
     bmask[:, -1] = 4
 
     # put nans here to make sure interp is done ok
-    msk = (bmask & bad_flags) != 0
+    msk = (weight <= 0) | ((bmask & bad_flags) != 0)
     image[msk] = np.nan
 
     rng = np.random.RandomState(seed=42)
     noise = rng.normal(size=image.shape)
-    iimage, inoise, imsk = interpolate_image_and_noise(
-        image=image,
-        weight=weight,
-        bmask=bmask,
-        bad_flags=bad_flags,
-        noise=noise)
+
+    iimage = interp_image_nocheck(image=image, bad_msk=msk)
+    inoise = interp_image_nocheck(image=noise, bad_msk=msk)
 
     assert np.allclose(iimage, 10 + x*5)
-    assert np.array_equal(msk, imsk)
 
     # make sure noise field was inteprolated
     rng = np.random.RandomState(seed=42)
@@ -128,23 +123,18 @@ def test_interpolate_image_and_noise_big_missing():
     bad_flags = 1
 
     rng = np.random.RandomState(seed=42)
-    nse = rng.normal(size=image.shape)
+    noise = rng.normal(size=image.shape)
     bmask[15:80, 15:80] = 1
 
     # put nans here to make sure interp is done ok
-    msk = (bmask & bad_flags) != 0
+    msk = (weight <= 0) | ((bmask & bad_flags) != 0)
     image[msk] = np.nan
 
-    iimage, inoise, imsk = interpolate_image_and_noise(
-        image=image,
-        weight=weight,
-        bmask=bmask,
-        bad_flags=bad_flags,
-        noise=nse)
+    iimage = interp_image_nocheck(image=image, bad_msk=msk)
+    inoise = interp_image_nocheck(image=noise, bad_msk=msk)
 
     # interp will be waaay off but shpuld have happened
     assert np.all(np.isfinite(iimage))
-    assert np.array_equal(msk, imsk)
 
     # make sure noise field was inteprolated
     rng = np.random.RandomState(seed=42)
@@ -159,7 +149,6 @@ def test_interpolate_gauss_image(show=False):
     piece missing from a gaussian image
     """
 
-    rng = np.random.RandomState(seed=31415)
     noise = 0.001
 
     sigma = 4.0
@@ -177,8 +166,6 @@ def test_interpolate_gauss_image(show=False):
     image_unmasked = np.exp(-0.5*(rows**2 + cols**2)*is2)
     weight = image_unmasked*0 + 1.0/noise**2
 
-    noise_image = rng.normal(scale=noise, size=image_unmasked.shape)
-
     badcol = int(cen[1]-3)
     bw = 3
     rr = badcol-bw, badcol+bw+1
@@ -190,16 +177,12 @@ def test_interpolate_gauss_image(show=False):
     bmask = np.zeros_like(image_unmasked, dtype=np.int32)
     bad_flags = 0
 
-    iimage, inoise, imsk = interpolate_image_and_noise(
-        image=image_masked,
-        weight=weight,
-        bmask=bmask,
-        bad_flags=bad_flags,
-        noise=noise_image,
-    )
+    msk = (weight <= 0) | ((bmask & bad_flags) != 0)
+    assert np.any(msk)
+
+    iimage = interp_image_nocheck(image=image_masked, bad_msk=msk)
 
     maxdiff = np.abs(image_unmasked-iimage).max()
-    assert np.any(imsk)
 
     if show:
         import images

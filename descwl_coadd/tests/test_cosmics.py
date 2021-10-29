@@ -3,7 +3,7 @@ import numpy as np
 from descwl_shear_sims.sim import make_sim
 from descwl_shear_sims.galaxies import make_galaxy_catalog
 from descwl_shear_sims.psfs import make_fixed_psf
-from ..coadd import make_coadd_obs
+from descwl_coadd.coadd import make_coadd_obs
 
 
 def test_cosmics():
@@ -33,7 +33,7 @@ def test_cosmics():
         epochs_per_band=10,  # so we get a CR
         cosmic_rays=True,
     )
-    coadd = make_coadd_obs(
+    coadd, exp_info = make_coadd_obs(
         exps=data['band_data']['i'],
         coadd_wcs=data['coadd_wcs'],
         coadd_bbox=data['coadd_bbox'],
@@ -41,6 +41,8 @@ def test_cosmics():
         rng=rng,
         remove_poisson=False,  # no object poisson noise in sims
     )
+
+    assert any(exp_info['maskfrac'] > 0)
 
     cosmic_flag = coadd.coadd_exp.mask.getPlaneBitMask('CR')
 

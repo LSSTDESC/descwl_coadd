@@ -8,7 +8,7 @@ import lsst.geom as geom
 from descwl_shear_sims.psfs import make_dm_psf
 from descwl_shear_sims.wcs import make_dm_wcs
 
-from ..coadd import make_coadd_obs
+from descwl_coadd.coadd import make_coadd_obs
 
 
 def make_exp(gsimage, bmask, noise, galsim_wcs, galsim_psf, psf_dim):
@@ -160,14 +160,13 @@ def test_coadd_image_correct(crazy_wcs, crazy_obj):
         geom.IntervalI(min=0, max=coadd_dim-1),
         geom.IntervalI(min=0, max=coadd_dim-1),
     )
-    coadd = make_coadd_obs(
+    coadd, exp_info = make_coadd_obs(
         exps=exps,
         coadd_wcs=make_dm_wcs(coadd_wcs),
         coadd_bbox=coadd_bbox,
         psf_dims=(psf_dim,)*2,
         rng=rng,
         remove_poisson=False,
-        loglevel='debug',
     )
 
     coadd_img = coadd.image

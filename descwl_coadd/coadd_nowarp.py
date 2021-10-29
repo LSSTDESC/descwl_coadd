@@ -1,19 +1,22 @@
+import logging
+from .coadd_obs import CoaddObs
 from .coadd import (
-    DEFAULT_LOGLEVEL,
-    CoaddObs,
-    make_logger,
     check_psf_dims,
     get_coadd_center,
-    get_exp_and_noise,
+    get_noise_exp,
+    get_bad_mask,
+    make_mfrac_exp,
+    interp_nocheck,
     get_psf_exp,
-    flag_bright_as_sat_in_coadd,
+    get_info_struct,
 )
+from .procflags import HIGH_MASKFRAC
+from .defaults import MAX_MASKFRAC
+
+LOG = logging.getLogger('descwl_coadd.coadd_nowarp')
 
 
-def make_coadd_obs_nowarp(
-    exp, psf_dims, rng, remove_poisson,
-    loglevel=DEFAULT_LOGLEVEL,
-):
+def make_coadd_obs_nowarp(exp, psf_dims, rng, remove_poisson):
     """
     Make a coadd from the input exposures and store in a CoaddObs, which
     inherits from ngmix.Observation. See make_coadd for docs on online
@@ -30,37 +33,38 @@ def make_coadd_obs_nowarp(
     remove_poisson: bool
         If True, remove the poisson noise from the variance
         estimate.
-    loglevel : str, optional
-        The logging level. Default is 'info'.
 
     Returns
     -------
-    CoaddObs (inherits from ngmix.Observation)
+    CoaddObs, exp_info
+        CoaddObs inherits from ngmix.Observation
+
+        exp_info structured array with fields 'exp_id', 'flags', 'maskfrac'
+            Flags are set to non zero for skipped exposures
     """
 
     coadd_data = make_coadd_nowarp(
         exp=exp,
         psf_dims=psf_dims,
         rng=rng, remove_poisson=remove_poisson,
-        loglevel=loglevel,
-    )
-    if coadd_data is None:
-        return None
-
-    return CoaddObs(
-        coadd_exp=coadd_data["coadd_exp"],
-        coadd_noise_exp=coadd_data["coadd_noise_exp"],
-        coadd_psf_exp=coadd_data["coadd_psf_exp"],
-        coadd_mfrac_exp=coadd_data["coadd_mfrac_exp"],
-        ormask=coadd_data['ormask'],
-        loglevel=loglevel,
     )
 
+    exp_info = coadd_data['exp_info']
 
-def make_coadd_nowarp(
-    exp, psf_dims, rng, remove_poisson,
-    loglevel=DEFAULT_LOGLEVEL,
-):
+    if coadd_data['nkept'] == 0:
+        coadd_obs = None
+    else:
+        coadd_obs = CoaddObs(
+            coadd_exp=coadd_data["coadd_exp"],
+            coadd_noise_exp=coadd_data["coadd_noise_exp"],
+            coadd_psf_exp=coadd_data["coadd_psf_exp"],
+            coadd_mfrac_exp=coadd_data["coadd_mfrac_exp"],
+        )
+
+    return coadd_obs, exp_info
+
+
+def make_coadd_nowarp(exp, psf_dims, rng, remove_poisson):
     """
     make a coadd from the input exposures, working in "online mode",
     adding each exposure separately.  This saves memory when
@@ -77,8 +81,6 @@ def make_coadd_nowarp(
     remove_poisson: bool
         If True, remove the poisson noise from the variance
         estimate.
-    loglevel : str, optional
-        The logging level. Default is 'info'.
 
     Returns
     -------
@@ -95,32 +97,57 @@ def make_coadd_nowarp(
                 The fraction of SE images interpolated in each coadd pixel.
     """
 
-    logger = make_logger('coadd', loglevel)
-    logger.info('making coadd obs')
+    LOG.info('making coadd obs')
 
     check_psf_dims(psf_dims)
 
-    _, noise_exp, var, mfrac_exp = get_exp_and_noise(
-        exp_or_ref=exp, rng=rng, remove_poisson=remove_poisson,
-    )
-    cen, cen_skypos = get_coadd_center(
-        coadd_wcs=exp.getWcs(), coadd_bbox=exp.getBBox(),
-    )
+    try:
+        exp_id = exp.getId()
+    except AttributeError:
+        exp_id = 0
 
-    psf_exp = get_psf_exp(
-        exp=exp,
-        coadd_cen_skypos=cen_skypos,
-        var=var,
-    )
+    exp_info = get_info_struct(1)
+    exp_info['exp_id'] = exp_id
 
-    ormask = exp.mask.array.copy()
-    flag_bright_as_sat_in_coadd(exp, ormask)
-    flag_bright_as_sat_in_coadd(noise_exp, ormask)
+    nkept = 0
 
-    return dict(
-        coadd_exp=exp,
-        coadd_noise_exp=noise_exp,
-        coadd_psf_exp=psf_exp,
-        coadd_mfrac_exp=mfrac_exp,
-        ormask=ormask,
-    )
+    bad_msk, maskfrac = get_bad_mask(exp)
+    exp_info['maskfrac'] = maskfrac
+
+    if maskfrac < MAX_MASKFRAC:
+
+        noise_exp, medvar = get_noise_exp(
+            exp=exp, rng=rng, remove_poisson=remove_poisson,
+        )
+        mfrac_exp = make_mfrac_exp(mfrac_msk=bad_msk, exp=exp)
+
+        if maskfrac > 0:
+            # images modified internally
+            interp_nocheck(exp=exp, noise_exp=noise_exp, bad_msk=bad_msk)
+
+        cen, cen_skypos = get_coadd_center(
+            coadd_wcs=exp.getWcs(), coadd_bbox=exp.getBBox(),
+        )
+
+        psf_exp = get_psf_exp(
+            exp=exp,
+            coadd_cen_skypos=cen_skypos,
+            var=medvar,
+        )
+        nkept += 1
+    else:
+        exp_info['flags'] |= HIGH_MASKFRAC
+
+    result = {
+        'nkept': nkept,
+        'exp_info': exp_info,
+    }
+    if nkept > 0:
+        result.update({
+            'coadd_exp': exp,
+            'coadd_noise_exp': noise_exp,
+            'coadd_psf_exp': psf_exp,
+            'coadd_mfrac_exp': mfrac_exp,
+        })
+
+    return result

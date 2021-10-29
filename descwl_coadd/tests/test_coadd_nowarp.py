@@ -6,7 +6,7 @@ from descwl_shear_sims.sim import make_sim
 from descwl_shear_sims.psfs import make_fixed_psf, make_ps_psf
 from descwl_shear_sims.stars import StarCatalog
 
-from ..coadd_nowarp import make_coadd_obs_nowarp
+from descwl_coadd.coadd_nowarp import make_coadd_obs_nowarp
 from descwl_shear_sims.galaxies import make_galaxy_catalog
 
 
@@ -77,7 +77,7 @@ def test_coadd_nowarp_smoke():
 
     exp = sim_data['band_data'][bands[0]][0]
 
-    coadd = make_coadd_obs_nowarp(
+    coadd, exp_info = make_coadd_obs_nowarp(
         exp=exp,
         psf_dims=sim_data['psf_dims'],
         rng=rng,
@@ -111,12 +111,14 @@ def test_coadds_mfrac():
 
     exp = sim_data['band_data'][bands[0]][0]
 
-    coadd = make_coadd_obs_nowarp(
+    coadd, exp_info = make_coadd_obs_nowarp(
         exp=exp,
         psf_dims=sim_data['psf_dims'],
         rng=rng,
         remove_poisson=False,  # no object poisson noise in sims
     )
+
+    assert any(exp_info['maskfrac'] > 0)
 
     assert not np.all(coadd.mfrac == 0)
     assert np.max(coadd.mfrac) > 0.1
@@ -142,7 +144,7 @@ def test_coadds_noise():
 
     exp = sim_data['band_data'][bands[0]][0]
 
-    coadd = make_coadd_obs_nowarp(
+    coadd, exp_info = make_coadd_obs_nowarp(
         exp=exp,
         psf_dims=sim_data['psf_dims'],
         rng=rng,
@@ -159,22 +161,20 @@ def test_coadds_noise():
 
 @pytest.mark.skipif('CATSIM_DIR' not in os.environ,
                     reason='CATSIM_DIR not in os.environ')
-def test_coadds_bright():
+def test_coadds_set():
     """
-    run trials with stars and make sure we get some BRIGHT
-    and SAT in the coadd mask
+    run trials with stars and make sure we get some SAT in the coadd mask
     """
-    rng = np.random.RandomState(85)
+    rng = np.random.RandomState(33)
 
     coadd_dim = 101
     psf_dim = 51
     band = 'i'
     epochs_per_band = 1
 
-    ntrial = 10
+    ntrial = 100
 
     somesat = False
-    somebright = False
     for i in range(ntrial):
         sim_data = _make_sim(
             rng=rng, psf_type='gauss', bands=[band],
@@ -185,7 +185,7 @@ def test_coadds_bright():
 
         exp = sim_data['band_data'][band][0]
 
-        coadd = make_coadd_obs_nowarp(
+        coadd, exp_info = make_coadd_obs_nowarp(
             exp=exp,
             psf_dims=sim_data['psf_dims'],
             rng=rng,
@@ -193,21 +193,13 @@ def test_coadds_bright():
         )
 
         mask = coadd.coadd_exp.mask
-        brightflag = mask.getPlaneBitMask('BRIGHT')
         satflag = mask.getPlaneBitMask('SAT')
 
         wsat = np.where(mask.array & satflag != 0)
-        wbright = np.where(mask.array & brightflag != 0)
-        assert wbright[0].size >= wsat[0].size
 
         if wsat[0].size > 0:
             somesat = True
-
-        if wbright[0].size > 0:
-            somebright = True
-
-        if somesat and somebright:
             break
 
     print('i:', i)
-    assert somesat and somebright
+    assert somesat
