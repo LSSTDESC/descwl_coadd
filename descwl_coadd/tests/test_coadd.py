@@ -382,6 +382,34 @@ def test_coadds_sat(dither, rotate):
     assert somesat
 
 
+@pytest.mark.parametrize('max_maskfrac', [-1, 1.0])
+def test_coadds_bad_max_maskfrac(max_maskfrac):
+    rng = np.random.RandomState(55)
+
+    coadd_dim = 101
+    psf_dim = 51
+
+    bands = ['i']
+    sim_data = _make_sim(
+        rng=rng, psf_type='gauss', bands=bands,
+        coadd_dim=coadd_dim, psf_dim=psf_dim,
+    )
+
+    # coadd each band separately
+    exps = sim_data['band_data']['i']
+
+    with pytest.raises(ValueError):
+        coadd, exp_info = make_coadd_obs(
+            exps=exps,
+            coadd_wcs=sim_data['coadd_wcs'],
+            coadd_bbox=sim_data['coadd_bbox'],
+            psf_dims=sim_data['psf_dims'],
+            rng=rng,
+            remove_poisson=False,  # no object poisson noise in sims
+            max_maskfrac=max_maskfrac,
+        )
+
+
 if __name__ == '__main__':
     test_coadds_mfrac(dither=True, rotate=True)
     # test_coadds_boundary(rotate=True)
