@@ -22,7 +22,6 @@ from .defaults import (
     BOUNDARY_SIZE,
     MAX_MASKFRAC,
 )
-from esutil.pbar import PBar
 import logging
 
 LOG = logging.getLogger('descwl_coadd.coadd')
@@ -189,7 +188,7 @@ def make_coadd(
     # 0::len(exps)
     exp_info = get_info_struct(len(exps))
 
-    for iexp, exp_or_ref in enumerate(PBar(exps)):
+    for iexp, exp_or_ref in enumerate(get_pbar(exps)):
 
         if isinstance(exp_or_ref, DeferredDatasetHandle):
             exp = exp_or_ref.get()
@@ -804,3 +803,27 @@ def check_max_maskfrac(max_maskfrac):
         raise ValueError(
             'got max_maskfrac {max_maskfrac} outside allowed range [0, 1]'
         )
+
+
+def get_pbar(exps, nmin=5):
+    """
+    use a progress bar if there is more than a certain number
+    of exposures
+
+    Parameters
+    ----------
+    exps: list of exposures
+        The data
+    nmin: int, optional
+        Return a progress bar if there are at least this many exposures
+
+    Returns
+    -------
+    progress bar if len(exps) > nmin, otherwise return the exps
+    """
+    from esutil.pbar import PBar
+
+    if len(exps) >= nmin:
+        return PBar(exps)
+    else:
+        return exps
