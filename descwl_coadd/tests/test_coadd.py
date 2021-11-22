@@ -39,7 +39,7 @@ def _make_sim(
     )
 
     if se_dim is None:
-        se_dim = get_se_dim(coadd_dim=coadd_dim)
+        se_dim = get_se_dim(coadd_dim=coadd_dim, dither=dither, rotate=rotate)
 
     if psf_type == "ps":
         psf = make_ps_psf(rng=rng, dim=se_dim)
