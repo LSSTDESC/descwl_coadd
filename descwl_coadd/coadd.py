@@ -264,6 +264,7 @@ def make_coadd(
         psf = extract_coadd_psf(coadd_psf_exp)
         coadd_exp.setPsf(psf)
         coadd_noise_exp.setPsf(psf)
+        coadd_mfrac_exp.setPsf(psf)
 
         result.update({
             'coadd_exp': coadd_exp,
