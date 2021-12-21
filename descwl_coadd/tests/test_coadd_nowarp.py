@@ -105,7 +105,8 @@ def test_coadds_mfrac():
 
     bands = ['i']
 
-    ntrial = 100
+    ntrial = 10
+    ok = False
     for i in range(ntrial):
         sim_data = _make_sim(
             rng=rng, psf_type='gauss', bands=bands,
@@ -130,7 +131,10 @@ def test_coadds_mfrac():
             np.all(coadd.mfrac >= 0) and
             np.all(coadd.mfrac <= 1)
         ):
+            ok = True
             break
+
+    assert ok
 
 
 def test_coadds_noise():
