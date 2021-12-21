@@ -95,7 +95,7 @@ def test_coadds_smoke(dither, rotate):
         assert band in bdata
         exps = bdata[band]
 
-        coadd, exp_info = make_coadd_obs(
+        coadd_data = make_coadd(
             exps=exps,
             coadd_wcs=sim_data['coadd_wcs'],
             coadd_bbox=sim_data['coadd_bbox'],
@@ -104,13 +104,18 @@ def test_coadds_smoke(dither, rotate):
             remove_poisson=False,  # no object poisson noise in sims
         )
 
+        for tp in ['exp', 'noise_exp', 'mfrac_exp']:
+            name = f'coadd_{tp}'
+            psf = coadd_data[name].getPsf()
+            assert psf is not None
+
         coadd_dims = (coadd_dim, )*2
         psf_dims = (psf_dim, )*2
-        assert coadd.image.shape == coadd_dims
-        assert coadd.psf.image.shape == psf_dims
+        assert coadd_data['coadd_exp'].image.array.shape == coadd_dims
+        assert coadd_data['coadd_psf_exp'].image.array.shape == psf_dims
 
-        assert np.all(np.isfinite(coadd.psf.image))
-        assert np.all(coadd.mfrac == 0)
+        assert np.all(np.isfinite(coadd_data['coadd_psf_exp'].image.array))
+        assert np.all(coadd_data['coadd_mfrac_exp'].image.array == 0)
 
 
 @pytest.mark.parametrize('dither', [False, True])
