@@ -134,7 +134,7 @@ def make_coadd(
 
     check_max_maskfrac(max_maskfrac)
 
-    filter_label = exps[0].getFilterLabel()
+    filter_label = exps[0].getFilter()
 
     # this is the requested coadd psf dims
     check_psf_dims(psf_dims)
@@ -357,7 +357,7 @@ def make_coadd_exposure(coadd_bbox, coadd_wcs, filter_label):
     ExpsureF
     """
     coadd_exp = afw_image.ExposureF(coadd_bbox, coadd_wcs)
-    coadd_exp.setFilterLabel(filter_label)
+    coadd_exp.setFilter(filter_label)
 
     # these planes are added by DM, add them here for consistency
     coadd_exp.mask.addMaskPlane("REJECTED")
@@ -494,7 +494,7 @@ def make_mfrac_exp(*, mfrac_msk, exp):
     mfrac_exp = afw_image.ExposureF(mfrac_img)
     mfrac_exp.setPsf(exp.getPsf())
     mfrac_exp.setWcs(exp.getWcs())
-    mfrac_exp.setFilterLabel(exp.getFilterLabel())
+    mfrac_exp.setFilter(exp.getFilter())
     mfrac_exp.setDetector(exp.getDetector())
 
     return mfrac_exp
@@ -697,7 +697,7 @@ def get_psf_exp(
     psf_exp.variance.array[:, :] = var
     psf_exp.mask.array[:, :] = 0
 
-    psf_exp.setFilterLabel(exp.getFilterLabel())
+    psf_exp.setFilter(exp.getFilter())
     detector = DetectorWrapper().detector
     psf_exp.setDetector(detector)
 
