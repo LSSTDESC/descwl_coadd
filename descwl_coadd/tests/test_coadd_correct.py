@@ -25,7 +25,7 @@ def make_exp(gsimage, bmask, noise, galsim_wcs, galsim_psf, psf_dim):
 
     exp = afw_image.ExposureF(masked_image)
     filter_label = afw_image.FilterLabel(band='i', physical='i')
-    exp.setFilterLabel(filter_label)
+    exp.setFilter(filter_label)
 
     exp.setPsf(dm_psf)
     exp.setWcs(dm_wcs)
