@@ -6,7 +6,7 @@ from lsst.meas.algorithms import AccumulatorMeanStack
 from lsst.daf.butler import DeferredDatasetHandle
 import lsst.geom as geom
 from lsst.afw.cameraGeom.testUtils import DetectorWrapper
-from lsst.meas.algorithms import KernelPsf
+from lsst.meas.algorithms import KernelPsf, remove_signal_from_variance
 from lsst.afw.math import FixedKernel
 
 from . import vis
@@ -633,20 +633,9 @@ def get_noise_exp(exp, rng, remove_poisson):
     use = np.where(np.isfinite(variance) & np.isfinite(signal))
 
     if remove_poisson:
-        # TODO sprint week gain correct separately in each amplifier, currently
-        # averaged.  Morgan
-        #
-        # TODO sprint week getGain may not work for a calexp Morgan
-        gains = [
-            amp.getGain() for amp in exp.getDetector().getAmplifiers()
-        ]
-        mean_gain = np.mean(gains)
+        variance = remove_signal_from_variance(exp).array
 
-        corrected_var = variance[use] - signal[use] / mean_gain
-
-        var = np.median(corrected_var)
-    else:
-        var = np.median(variance[use])
+    var = np.median(variance[use])
 
     noise_image = rng.normal(scale=np.sqrt(var), size=signal.shape)
 
