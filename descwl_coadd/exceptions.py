@@ -9,3 +9,16 @@ class WarpBoundaryError(Exception):
 
     def __str__(self):
         return repr(self.value)
+
+
+class HighMaskedFrac(Exception):
+    """
+    masked fraction too high
+    """
+
+    def __init__(self, value):
+        super().__init__(value)
+        self.value = value
+
+    def __str__(self):
+        return repr(self.value)

@@ -2,12 +2,13 @@ import sys
 import os
 import pytest
 import numpy as np
+import esutil as eu
 
 from descwl_shear_sims.sim import make_sim, get_se_dim
 from descwl_shear_sims.psfs import make_fixed_psf, make_ps_psf
 from descwl_shear_sims.stars import StarCatalog
 
-from descwl_coadd.coadd import make_coadd_obs, make_coadd
+from descwl_coadd.coadd import make_coadd_obs, make_coadd, make_coadd_old
 from descwl_coadd.procflags import WARP_BOUNDARY
 from descwl_shear_sims.galaxies import make_galaxy_catalog
 import logging
@@ -322,6 +323,64 @@ def test_coadds_not_used():
     wbad, = np.where(exp_info['flags'] != 0)
     assert wbad.size == 1
     assert wbad[0] == 1
+
+
+def test_new_coadds():
+    seed = 9312
+
+    for coadd_type in ('old', 'new'):
+        rng = np.random.RandomState(seed)
+
+        epochs_per_band = 3
+        sim_data = _make_sim(
+            rng=rng,
+            psf_type='gauss',
+            bands=['i'],
+            coadd_dim=101,
+            psf_dim=51,
+            epochs_per_band=epochs_per_band,
+        )
+
+        # TODO we don't have getId() yet, so assuming the first one is index 0 etc.
+        # for now
+        exps = sim_data['band_data']['i']
+        exp = exps[1]
+        flagval = exp.mask.getPlaneBitMask('BAD')
+
+        exp.mask.array[:, :] = flagval
+
+        if coadd_type == 'new':
+            function = make_coadd
+        else:
+            function = make_coadd_old
+
+        coadd_dict = function(
+            exps=exps,
+            coadd_wcs=sim_data['coadd_wcs'],
+            coadd_bbox=sim_data['coadd_bbox'],
+            psf_dims=sim_data['psf_dims'],
+            rng=rng,
+            remove_poisson=False,  # no object poisson noise in sims
+        )
+        if coadd_type == 'new':
+            cdnew = coadd_dict
+        else:
+            cdold = coadd_dict
+
+    assert cdnew['nkept'] == cdold['nkept']
+    assert eu.numpy_util.compare_arrays(cdnew['exp_info'], cdold['exp_info'])
+    assert np.all(
+        cdnew['coadd_exp'].image.array == cdold['coadd_exp'].image.array
+    )
+    assert np.all(
+        cdnew['coadd_noise_exp'].image.array == cdold['coadd_noise_exp'].image.array
+    )
+    assert np.all(
+        cdnew['coadd_psf_exp'].image.array == cdold['coadd_psf_exp'].image.array
+    )
+    assert np.all(
+        cdnew['coadd_mfrac_exp'].image.array == cdold['coadd_mfrac_exp'].image.array
+    )
 
 
 @pytest.mark.skipif('CATSIM_DIR' not in os.environ,
