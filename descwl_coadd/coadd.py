@@ -1,3 +1,7 @@
+"""
+TODO:
+    fill in stubbs for write_warps and load_warps
+"""
 import numpy as np
 import esutil as eu
 
@@ -90,6 +94,7 @@ def make_coadd_obs(
 def make_coadd(
     exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson,
     max_maskfrac=MAX_MASKFRAC,
+    is_warps=False,
 ):
     """
     make a coadd from the input exposures, working in "online mode",
@@ -115,7 +120,9 @@ def make_coadd(
         Maximum allowed masked fraction.  Images masked more than
         this will not be included in the coadd.  Must be in range
         [0, 1]
-
+    is_warps: bool
+        If set to True the input exps are actually handles for a data set, from
+        which the warps and info can be loaded
     Returns
     -------
     coadd_data : dict
@@ -168,13 +175,16 @@ def make_coadd(
 
     for iexp, exp in enumerate(get_pbar(exps)):
 
-        warp, noise_warp, psf_warp, mfrac_warp, this_exp_info = make_warps(
-            exp=exp, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
-            psf_dims=psf_dims, rng=rng, remove_poisson=remove_poisson,
-            max_maskfrac=max_maskfrac,
-        )
-        if this_exp_info['exp_id'] == -9999:
-            this_exp_info['exp_id'] = iexp
+        if is_warps:
+            warp, noise_warp, psf_warp, mfrac_warp, this_exp_info = load_warps(exp)
+        else:
+            warp, noise_warp, psf_warp, mfrac_warp, this_exp_info = make_warps(
+                exp=exp, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
+                psf_dims=psf_dims, rng=rng, remove_poisson=remove_poisson,
+                max_maskfrac=max_maskfrac,
+            )
+            if this_exp_info['exp_id'] == -9999:
+                this_exp_info['exp_id'] = iexp
 
         exp_infos.append(this_exp_info)
 
@@ -431,7 +441,7 @@ def make_warps(
 
     Returns
     -------
-    warp, noise_warp, psf_warp, mfrac_warp, medvar, exp_info
+    warp, noise_warp, psf_warp, mfrac_warp, exp_info
 
     TODO
     ----
@@ -558,6 +568,20 @@ def write_warps(
     info: array
         info struct
     other_arguments_here: to be added
+    """
+    raise NotImplementedError('implement write_warps')
+
+
+def load_warps(deferred, other_arguments_here):
+    """
+    Load warps from disk
+
+    deferred: DeferredDatasetHandle
+        The handle from which to load data
+
+    Returns
+    --------
+    warp, noise_warp, psf_warp, mfrac_warp, exp_info
     """
     raise NotImplementedError('implement write_warps')
 
