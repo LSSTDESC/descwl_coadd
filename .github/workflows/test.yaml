@@ -14,7 +14,7 @@ jobs:
             # specific version 3.8.8 is here to fix solver error w/ sqlite 
             # see https://lsstc.slack.com/archives/C2K9RHYTV/p1628567486002200
             # when python 3.9 is in use, set this to 3.9
-            pyver: [3.8.8, "3.10"]
+            pyver: ["3.10"]
 
       runs-on: "ubuntu-latest"
 
