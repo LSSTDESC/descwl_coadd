@@ -414,6 +414,7 @@ def make_coadd_old(
 
 def make_warps(
     exp, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson, max_maskfrac,
+    warper=None, mfrac_warper=None,
 ):
     """
     make warps from the input exposure, including warps for the PSF, noise
@@ -440,6 +441,10 @@ def make_warps(
         Maximum allowed masked fraction.  Images masked more than
         this will not be included in the coadd.  Must be in range
         [0, 1]
+    warper: afw_math.Warper
+        The warper to use for the image, noise, and psf
+    mfrac_warper: afw_math.Warper
+        The warper to use for the masked fraction
 
     Returns
     -------
@@ -464,13 +469,15 @@ def make_warps(
 
     # can re-use the warper for each coadd type except the mfrac where we use
     # linear
-    warp_config = afw_math.Warper.ConfigClass()
-    warp_config.warpingKernelName = DEFAULT_INTERP
-    warper = afw_math.Warper.fromConfig(warp_config)
+    if warper is None:
+        warp_config = afw_math.Warper.ConfigClass()
+        warp_config.warpingKernelName = DEFAULT_INTERP
+        warper = afw_math.Warper.fromConfig(warp_config)
 
-    warp_config = afw_math.Warper.ConfigClass()
-    warp_config.warpingKernelName = "bilinear"
-    mfrac_warper = afw_math.Warper.fromConfig(warp_config)
+    if mfrac_warper is None:
+        warp_config = afw_math.Warper.ConfigClass()
+        warp_config.warpingKernelName = "bilinear"
+        mfrac_warper = afw_math.Warper.fromConfig(warp_config)
 
     # will zip these with the exposures to warp and add
     wcss = [coadd_wcs, coadd_wcs, coadd_psf_wcs, coadd_wcs]
