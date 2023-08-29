@@ -18,7 +18,7 @@ from . import vis
 from .interp import interp_image_nocheck
 from .util import get_coadd_center
 from .coadd_obs import CoaddObs
-from .exceptions import WarpBoundaryError, HighMaskedFrac
+from .exceptions import WarpBoundaryError
 from .procflags import HIGH_MASKFRAC, WARP_BOUNDARY
 from .defaults import (
     DEFAULT_INTERP,
@@ -181,12 +181,17 @@ def make_coadd(
             warp, noise_warp, psf_warp, mfrac_warp, this_exp_info = make_warps(
                 exp=exp, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
                 psf_dims=psf_dims, rng=rng, remove_poisson=remove_poisson,
-                max_maskfrac=max_maskfrac,
             )
             if this_exp_info['exp_id'] == -9999:
                 this_exp_info['exp_id'] = iexp
 
         exp_infos.append(this_exp_info)
+
+        if (maskfrac := this_exp_info['maskfrac']) >= max_maskfrac:
+            LOG.info("skipping %d maskfrac %f >= %f",
+                     this_exp_info['exp_id'], maskfrac, max_maskfrac)
+            this_exp_info['flags'][0] |= HIGH_MASKFRAC
+            continue
 
         if this_exp_info['flags'][0] == 0:
             warps = [warp, noise_warp, psf_warp, mfrac_warp]
@@ -413,7 +418,7 @@ def make_coadd_old(
 
 
 def make_warps(
-    exp, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson, max_maskfrac,
+    exp, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson,
     warper=None, mfrac_warper=None,
 ):
     """
@@ -437,10 +442,6 @@ def make_warps(
     remove_poisson: bool
         If True, remove the poisson noise from the variance
         estimate.
-    max_maskfrac: float
-        Maximum allowed masked fraction.  Images masked more than
-        this will not be included in the coadd.  Must be in range
-        [0, 1]
     warper: afw_math.Warper
         The warper to use for the image, noise, and psf
     mfrac_warper: afw_math.Warper
@@ -516,9 +517,6 @@ def make_warps(
     exp_info['weight'] = 1/medvar
 
     try:
-        if maskfrac >= max_maskfrac:
-            raise HighMaskedFrac('high maskfrac')
-
         mfrac_exp = make_mfrac_exp(mfrac_msk=bad_msk, exp=expobj)
 
         if maskfrac > 0:
@@ -548,11 +546,6 @@ def make_warps(
         LOG.info('%s', err)
         exp_info['flags'] |= WARP_BOUNDARY
         warp, noise_warp, psf_warp, mfrac_warp = [None] * 4
-    except HighMaskedFrac:
-        LOG.info(f'{exp_id} maskfrac {maskfrac} >= {max_maskfrac}')
-        exp_info['flags'] |= HIGH_MASKFRAC
-        warp, noise_warp, psf_warp, mfrac_warp = [None] * 4
-
     return warp, noise_warp, psf_warp, mfrac_warp, exp_info
 
 
