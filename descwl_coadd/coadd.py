@@ -556,31 +556,6 @@ def make_warps(
     return warp, noise_warp, psf_warp, mfrac_warp, exp_info
 
 
-def write_warps(
-    warp, noise_warp, psf_warp, mfrac_warp, info, other_arguments_here,
-):
-    """
-    Write warps to disk
-
-    TODO:
-        1. Implement writing
-        2. Figure out how to get filename etc.
-
-    warp: ExposureF
-        The image warp
-    noise_warp: ExposureF
-        The noise image warp
-    psf_warp: ExposureF
-        The psf image warp
-    mfrac_warp: ExposureF
-        mfrac warp
-    info: array
-        info struct
-    other_arguments_here: to be added
-    """
-    raise NotImplementedError('implement write_warps')
-
-
 def load_warps(deferred, other_arguments_here):
     """
     Load warps from disk
