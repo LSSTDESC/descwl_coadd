@@ -419,10 +419,12 @@ def make_warps(
     make warps from the input exposure, including warps for the PSF, noise
     images and masked fraction
 
+    This is the entry point to the package from the LSST Pipetask.
+
     Parameters
     ----------
     exp: ExposureF or DeferredDatasetHandle
-        Either a list of exposures or a list of DeferredDatasetHandle
+        Either an Exposure or a corresponding DeferredDatasetHandle
     coadd_wcs: DM wcs object
         The target wcs
     coadd_bbox: geom.Box2I
