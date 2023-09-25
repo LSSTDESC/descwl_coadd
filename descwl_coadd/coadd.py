@@ -894,6 +894,44 @@ def make_stacker(coadd_dims):
     )
 
 
+def get_median_var(exp, remove_poisson):
+    """Get the median variance of the input exposure.
+
+    Parameters
+    ----------
+    exp: afw.image.ExposureF
+        The image from which to get the median variance
+    remove_poisson: bool
+        If True, remove the poisson noise from the variance
+
+    Returns
+    -------
+    medvar: float
+        The median variance
+    """
+    signal = exp.image.array
+    variance = exp.variance.array
+
+    use = np.where(np.isfinite(variance) & np.isfinite(signal))
+
+    if remove_poisson:
+        # TODO sprint week gain correct separately in each amplifier, currently
+        # averaged.  Morgan
+        #
+        # TODO sprint week getGain may not work for a calexp Morgan
+        gains = [
+            amp.getGain() for amp in exp.getDetector().getAmplifiers()
+        ]
+        mean_gain = np.mean(gains)
+
+        corrected_var = variance[use] - signal[use] / mean_gain
+
+        var = np.median(corrected_var)
+    else:
+        var = np.median(variance[use])
+
+    return var
+
 def get_noise_exp(exp, rng, remove_poisson):
     """
     get a noise image based on the input exposure
@@ -916,25 +954,8 @@ def get_noise_exp(exp, rng, remove_poisson):
     noise_exp = afw_image.ExposureF(exp, deep=True)
 
     signal = exp.image.array
-    variance = exp.variance.array
 
-    use = np.where(np.isfinite(variance) & np.isfinite(signal))
-
-    if remove_poisson:
-        # TODO sprint week gain correct separately in each amplifier, currently
-        # averaged.  Morgan
-        #
-        # TODO sprint week getGain may not work for a calexp Morgan
-        gains = [
-            amp.getGain() for amp in exp.getDetector().getAmplifiers()
-        ]
-        mean_gain = np.mean(gains)
-
-        corrected_var = variance[use] - signal[use] / mean_gain
-
-        var = np.median(corrected_var)
-    else:
-        var = np.median(variance[use])
+    var = get_median_var(exp, remove_poisson)
 
     noise_image = rng.normal(scale=np.sqrt(var), size=signal.shape)
 
