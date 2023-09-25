@@ -417,6 +417,34 @@ def make_coadd_old(
     return result
 
 
+def _get_default_image_warper():
+    """Get the default warper instances for warping images (and PSFs).
+
+    Returns
+    -------
+    warper: afw_math.Warper
+        Warper instance for warping images.
+    """
+    warp_config = afw_math.Warper.ConfigClass()
+    warp_config.warpingKernelName = DEFAULT_INTERP
+    warper = afw_math.Warper.fromConfig(warp_config)
+
+    return warper
+
+def _get_default_mfrac_warper():
+    """Get the default warper instances for warping masked fractions.
+
+    Returns
+    -------
+    mfrac_warper: afw_math.Warper
+        Warper instance for warping masked fractions.
+    """
+    warp_config = afw_math.Warper.ConfigClass()
+    warp_config.warpingKernelName = "bilinear"
+    mfrac_warper = afw_math.Warper.fromConfig(warp_config)
+
+    return mfrac_warper
+
 def make_warps(
     exp, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson,
     warper=None, mfrac_warper=None,
@@ -471,14 +499,10 @@ def make_warps(
     # can re-use the warper for each coadd type except the mfrac where we use
     # linear
     if warper is None:
-        warp_config = afw_math.Warper.ConfigClass()
-        warp_config.warpingKernelName = DEFAULT_INTERP
-        warper = afw_math.Warper.fromConfig(warp_config)
+        warper = _get_default_image_warper()
 
     if mfrac_warper is None:
-        warp_config = afw_math.Warper.ConfigClass()
-        warp_config.warpingKernelName = "bilinear"
-        mfrac_warper = afw_math.Warper.fromConfig(warp_config)
+        mfrac_warper = _get_default_mfrac_warper()
 
     # will zip these with the exposures to warp and add
     wcss = [coadd_wcs, coadd_wcs, coadd_psf_wcs, coadd_wcs]
