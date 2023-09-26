@@ -519,7 +519,7 @@ def make_warps(
     try:
         mfrac_exp = make_mfrac_exp(mfrac_msk=bad_msk, exp=expobj)
 
-        if maskfrac > 0:
+        if 0 < maskfrac < 1:
             # images modified internally
             interp_nocheck(exp=expobj, noise_exp=noise_exp, bad_msk=bad_msk)
 
