@@ -33,7 +33,7 @@ LOG = logging.getLogger('descwl_coadd.coadd')
 
 
 def make_coadd_obs(
-    exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson,
+    exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson, psfs=None,
     max_maskfrac=MAX_MASKFRAC,
 ):
     """
@@ -56,6 +56,9 @@ def make_coadd_obs(
     remove_poisson: bool, optional
         If True, remove the poisson noise from the variance
         estimate.
+    psfs: list of PSF objects, optional
+        List of PSF objects. If None, then the PSFs will be extracted from the
+        exposures provided in ``exps``.
     max_maskfrac: float
         Maximum allowed masked fraction.  Images masked more than
         this will not be included in the coadd.  Must be in range
@@ -72,7 +75,7 @@ def make_coadd_obs(
 
     coadd_data = make_coadd(
         exps=exps, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
-        psf_dims=psf_dims,
+        psf_dims=psf_dims, psfs=psfs,
         rng=rng, remove_poisson=remove_poisson,
         max_maskfrac=max_maskfrac,
     )
@@ -92,7 +95,7 @@ def make_coadd_obs(
 
 
 def make_coadd(
-    exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson,
+    exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson, psfs=None,
     max_maskfrac=MAX_MASKFRAC,
     is_warps=False,
 ):
@@ -116,6 +119,9 @@ def make_coadd(
     remove_poisson: bool
         If True, remove the poisson noise from the variance
         estimate.
+    psfs: list of PSF objects, optional
+        List of PSF objects. If None, then the PSFs will be extracted from the
+        exposures provided in ``exps``.
     max_maskfrac: float, optional
         Maximum allowed masked fraction.  Images masked more than
         this will not be included in the coadd.  Must be in range
@@ -173,17 +179,25 @@ def make_coadd(
 
     exp_infos = []
 
-    for iexp, exp in enumerate(get_pbar(exps)):
+    if psfs is None:
+        psfs = (exp.getPsf() for exp in exps)
+
+    wcss = (exp.getWcs() for exp in exps)
+
+    for iexp, (exp, psf, wcs) in enumerate(get_pbar(list(zip(exps, psfs, wcss)))):
 
         if is_warps:
-            warp, noise_warp, psf_warp, mfrac_warp, this_exp_info = load_warps(exp)
+            warp, noise_warp, mfrac_warp, this_exp_info = load_warps(exp)
         else:
             warp, noise_warp, psf_warp, mfrac_warp, this_exp_info = make_warps(
                 exp=exp, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
                 psf_dims=psf_dims, rng=rng, remove_poisson=remove_poisson,
             )
-            if this_exp_info['exp_id'] == -9999:
-                this_exp_info['exp_id'] = iexp
+        psf_warp = warp_psf(psf=psf, wcs=wcs, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
+                            psf_dims=psf_dims, var=1/this_exp_info['weight'], filter_label=filter_label)
+
+        if this_exp_info['exp_id'] == -9999:
+            this_exp_info['exp_id'] = iexp
 
         exp_infos.append(this_exp_info)
 
@@ -571,6 +585,60 @@ def make_warps(
         exp_info['flags'] |= WARP_BOUNDARY
         warp, noise_warp, psf_warp, mfrac_warp = [None] * 4
     return warp, noise_warp, psf_warp, mfrac_warp, exp_info
+
+
+def warp_psf(psf, wcs, coadd_wcs, coadd_bbox, psf_dims, var=1.0, warper=None, filter_label=None):
+    """Warp a PSF object to the coadd WCS and bounding box.and
+
+    psf: `lsst.afw.detection.Psf`
+        The PSF to warp.
+    coadd_wcs: `lsst.afw.geom.SkyWcs`
+        The WCS of the coadd.
+    coadd_bbox: `lsst.geom.Box2I`
+        The bounding box of the coadd cell.
+    psf_dims: `tuple [int, int]`
+        The dimensions of the PSF image. Both dimensions must be equal and odd.
+    var: `float`, optional
+        The variance of the unwarped PSF.
+    warper: `lsst.afw.math.Warper`, optional
+        The warper to use for the PSF. If None, the default warper will be used.
+    filter_label: `lsst.afw.image.FilterLabel` or `str`, optional
+        The filter label to set for the warped PSF.
+
+    Returns
+    -------
+    psf_warp: `lsst.afw.image.ExposureF`
+        The warped image of the PSF.
+    """
+    # this is the requested coadd psf dims
+    check_psf_dims(psf_dims)
+
+    # Get integer center of coadd and corresponding sky center.  This is used
+    # to construct the coadd psf bounding box and to reconstruct the psfs
+    coadd_cen_integer, coadd_cen_skypos = get_coadd_center(
+        coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
+    )
+
+    coadd_psf_bbox = get_coadd_psf_bbox(cen=coadd_cen_integer, dim=psf_dims[0])
+
+    if warper is None:
+        warper = _get_default_image_warper()
+
+    wcss = [coadd_wcs]
+    bboxes = [coadd_psf_bbox]
+    warpers = [warper]
+
+    psf_exp = get_psf_exp_new(
+            psf=psf,
+            wcs=wcs,
+            coadd_cen_skypos=coadd_cen_skypos,
+            var=var,
+            filter_label=filter_label)
+
+    LOG.info('warping PSF')
+    psf_warp, = _get_warps_for_exp([psf_exp], wcss, bboxes, warpers, [False])
+
+    return psf_warp
 
 
 def load_warps(deferred, other_arguments_here):
