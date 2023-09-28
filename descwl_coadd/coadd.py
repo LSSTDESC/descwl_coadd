@@ -988,6 +988,51 @@ def get_noise_exp(exp, rng, remove_poisson):
 
     return noise_exp, var
 
+def get_psf_exp_new(
+    psf, wcs,
+    coadd_cen_skypos,
+    var=1.0,
+    filter_label=None,
+):
+    """
+    create a psf exposure to be coadded, rendered at the
+    position in the exposure corresponding to the center of the
+    coadd
+
+    Parameters
+    ----------
+    exp: afw_image.ExposureF
+        The exposure
+    coadd_cen_skypos: SpherePoint
+        The sky position of the center of the coadd within its
+        bbox
+    var: float, optional
+        The variance to set in the psf variance map
+
+    Returns
+    -------
+    psf ExposureF
+    """
+
+    pos = wcs.skyToPixel(coadd_cen_skypos)
+
+    psf_image = psf.computeImage(pos).array
+
+    psf_dim = psf_image.shape[0]
+
+    psf_bbox = get_psf_bbox(pos=pos, dim=psf_dim)
+
+    # wcs same as SE exposure
+    psf_exp = afw_image.ExposureF(psf_bbox, wcs)
+    psf_exp.image.array[:, :] = psf_image
+    psf_exp.variance.array[:, :] = var
+    psf_exp.mask.array[:, :] = 0
+
+    psf_exp.setFilter(filter_label)
+    detector = DetectorWrapper().detector
+    psf_exp.setDetector(detector)
+
+    return psf_exp
 
 def get_psf_exp(
     exp,
