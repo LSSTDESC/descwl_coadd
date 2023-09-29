@@ -116,7 +116,10 @@ def make_coadd(
         The dimensions of the psf
     rng: np.random.RandomState
         The random number generator for making noise images
-    remove_poisson: bool
+    psfs: list of PSF objects, optional
+        List of PSF objects. If None, then the PSFs will be extracted from the
+        exposures provided in ``exps``.
+    remove_poisson: bool, optional
         If True, remove the poisson noise from the variance
         estimate.
     psfs: list of PSF objects, optional
@@ -189,9 +192,9 @@ def make_coadd(
         if is_warps:
             warp, noise_warp, mfrac_warp, this_exp_info = load_warps(exp)
         else:
-            warp, noise_warp, psf_warp, mfrac_warp, this_exp_info = make_warps(
+            warp, noise_warp, mfrac_warp, this_exp_info = make_warps(
                 exp=exp, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
-                psf_dims=psf_dims, rng=rng, remove_poisson=remove_poisson,
+                rng=rng, remove_poisson=remove_poisson,
             )
         psf_warp = warp_psf(psf=psf, wcs=wcs, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
                             psf_dims=psf_dims, var=1/this_exp_info['weight'], filter_label=filter_label)
@@ -445,6 +448,7 @@ def _get_default_image_warper():
 
     return warper
 
+
 def _get_default_mfrac_warper():
     """Get the default warper instances for warping masked fractions.
 
@@ -459,8 +463,9 @@ def _get_default_mfrac_warper():
 
     return mfrac_warper
 
+
 def make_warps(
-    exp, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson,
+    exp, coadd_wcs, coadd_bbox, rng, remove_poisson,
     warper=None, mfrac_warper=None,
 ):
     """
@@ -477,16 +482,14 @@ def make_warps(
         The target wcs
     coadd_bbox: geom.Box2I
         The bounding box for the coadd within larger wcs system
-    psf_dims: tuple
-        The dimensions of the psf
     rng: np.random.RandomState
         The random number generator for making noise images
     remove_poisson: bool
         If True, remove the poisson noise from the variance
         estimate.
-    warper: afw_math.Warper
+    warper: afw_math.Warper, optional
         The warper to use for the image, noise, and psf
-    mfrac_warper: afw_math.Warper
+    mfrac_warper: afw_math.Warper, optional
         The warper to use for the masked fraction
 
     Returns
@@ -498,18 +501,6 @@ def make_warps(
         - make a list of noise exposures
     """
 
-    # this is the requested coadd psf dims
-    check_psf_dims(psf_dims)
-
-    # Get integer center of coadd and corresponding sky center.  This is used
-    # to construct the coadd psf bounding box and to reconstruct the psfs
-    coadd_cen_integer, coadd_cen_skypos = get_coadd_center(
-        coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
-    )
-
-    coadd_psf_bbox = get_coadd_psf_bbox(cen=coadd_cen_integer, dim=psf_dims[0])
-    coadd_psf_wcs = coadd_wcs
-
     # can re-use the warper for each coadd type except the mfrac where we use
     # linear
     if warper is None:
@@ -519,15 +510,15 @@ def make_warps(
         mfrac_warper = _get_default_mfrac_warper()
 
     # will zip these with the exposures to warp and add
-    wcss = [coadd_wcs, coadd_wcs, coadd_psf_wcs, coadd_wcs]
-    bboxes = [coadd_bbox, coadd_bbox, coadd_psf_bbox, coadd_bbox]
-    warpers = [warper, warper, warper, mfrac_warper]
+    wcss = [coadd_wcs, coadd_wcs, coadd_wcs]
+    bboxes = [coadd_bbox, coadd_bbox, coadd_bbox]
+    warpers = [warper, warper, mfrac_warper]
 
     # PSF will generally have NO_DATA in warp as we tend to use the same psf
     # stamp size for input and output psf and just zero out wherever there is
     # no data
 
-    verifys = [True, True, False, True]
+    verifys = [True, True, True]
 
     LOG.info('warping and adding exposures')
 
@@ -561,30 +552,23 @@ def make_warps(
             # images modified internally
             interp_nocheck(exp=expobj, noise_exp=noise_exp, bad_msk=bad_msk)
 
-        psf_exp = get_psf_exp(
-            exp=expobj,
-            coadd_cen_skypos=coadd_cen_skypos,
-            var=medvar,
-        )
-        assert psf_exp.variance.array[0, 0] == noise_exp.variance.array[0, 0]
-
         # we use this to check no edges made it into the coadd
         add_boundary_bit(expobj)
         add_boundary_bit(noise_exp)
 
         # order must match wcss, bboxes, warpers, verifys
-        exps2add = [expobj, noise_exp, psf_exp, mfrac_exp]
+        exps2add = [expobj, noise_exp, mfrac_exp]
 
         # the verify checks boundary/NO_DATA Use an exception as an easy way to
         # guarantee that if one fails to verify we fail
         warps = _get_warps_for_exp(exps2add, wcss, bboxes, warpers, verifys)
-        warp, noise_warp, psf_warp, mfrac_warp = warps
+        warp, noise_warp, mfrac_warp = warps
 
     except WarpBoundaryError as err:
         LOG.info('%s', err)
         exp_info['flags'] |= WARP_BOUNDARY
-        warp, noise_warp, psf_warp, mfrac_warp = [None] * 4
-    return warp, noise_warp, psf_warp, mfrac_warp, exp_info
+        warp, noise_warp, mfrac_warp = [None] * 3
+    return warp, noise_warp, mfrac_warp, exp_info
 
 
 def warp_psf(psf, wcs, coadd_wcs, coadd_bbox, psf_dims, var=1.0, warper=None, filter_label=None):
@@ -1056,6 +1040,7 @@ def get_noise_exp(exp, rng, remove_poisson):
 
     return noise_exp, var
 
+
 def get_psf_exp_new(
     psf, wcs,
     coadd_cen_skypos,
@@ -1101,6 +1086,7 @@ def get_psf_exp_new(
     psf_exp.setDetector(detector)
 
     return psf_exp
+
 
 def get_psf_exp(
     exp,
