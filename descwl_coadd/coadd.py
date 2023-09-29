@@ -192,7 +192,7 @@ def make_coadd(
         if is_warps:
             warp, noise_warp, mfrac_warp, this_exp_info = load_warps(exp)
         else:
-            warp, noise_warp, mfrac_warp, this_exp_info = make_warps(
+            warp, noise_warp, mfrac_warp, this_exp_info = warp_exposures(
                 exp=exp, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
                 rng=rng, remove_poisson=remove_poisson,
             )
@@ -464,13 +464,12 @@ def _get_default_mfrac_warper():
     return mfrac_warper
 
 
-def make_warps(
+def warp_exposures(
     exp, coadd_wcs, coadd_bbox, rng, remove_poisson,
     warper=None, mfrac_warper=None, verify=True,
 ):
     """
-    make warps from the input exposure, including warps for the PSF, noise
-    images and masked fraction
+    Warps the input exposures, noise image and masked fraction
 
     This is the entry point to the package from the LSST Pipetask.
 
