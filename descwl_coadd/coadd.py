@@ -466,7 +466,7 @@ def _get_default_mfrac_warper():
 
 def make_warps(
     exp, coadd_wcs, coadd_bbox, rng, remove_poisson,
-    warper=None, mfrac_warper=None,
+    warper=None, mfrac_warper=None, verify=True,
 ):
     """
     make warps from the input exposure, including warps for the PSF, noise
@@ -491,6 +491,8 @@ def make_warps(
         The warper to use for the image, noise, and psf
     mfrac_warper: afw_math.Warper, optional
         The warper to use for the masked fraction
+    verify: bool, optional
+        If True, verify that the warps completely overlap the cell region.
 
     Returns
     -------
@@ -518,7 +520,7 @@ def make_warps(
     # stamp size for input and output psf and just zero out wherever there is
     # no data
 
-    verifys = [True, True, True]
+    verifys = [verify]*3
 
     LOG.info('warping and adding exposures')
 
