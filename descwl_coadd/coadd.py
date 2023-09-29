@@ -53,7 +53,7 @@ def make_coadd_obs(
         The dimensions of the psf
     rng: np.random.RandomState
         The random number generator for making noise images
-    remove_poisson: bool
+    remove_poisson: bool, optional
         If True, remove the poisson noise from the variance
         estimate.
     max_maskfrac: float
@@ -116,11 +116,11 @@ def make_coadd(
     remove_poisson: bool
         If True, remove the poisson noise from the variance
         estimate.
-    max_maskfrac: float
+    max_maskfrac: float, optional
         Maximum allowed masked fraction.  Images masked more than
         this will not be included in the coadd.  Must be in range
         [0, 1]
-    is_warps: bool
+    is_warps: bool, optional
         If set to True the input exps are actually handles for a data set, from
         which the warps and info can be loaded
     Returns
