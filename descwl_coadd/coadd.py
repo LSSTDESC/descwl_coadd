@@ -1,13 +1,9 @@
-"""
-TODO:
-    fill in stubbs for write_warps and load_warps
-"""
 import numpy as np
 import esutil as eu
 
 import lsst.afw.math as afw_math
 import lsst.afw.image as afw_image
-from lsst.meas.algorithms import AccumulatorMeanStack
+from lsst.meas.algorithms import AccumulatorMeanStack, WarpedPsf
 from lsst.daf.butler import DeferredDatasetHandle
 import lsst.geom as geom
 from lsst.afw.cameraGeom.testUtils import DetectorWrapper
@@ -107,7 +103,7 @@ def make_coadd(
     Parameters
     ----------
     exps: list
-        Either a list of exposures or a list of DeferredDatasetHandle
+        Either a list of exposures or a list of SingleCellCoadd
     coadd_wcs: DM wcs object
         The target wcs
     coadd_bbox: geom.Box2I
@@ -662,18 +658,40 @@ def warp_psf(psf, wcs, coadd_wcs, coadd_bbox, psf_dims, var=1.0, warper=None, fi
     return psf_warp
 
 
-def load_warps(deferred, other_arguments_here):
+def load_warps(scc):
     """
-    Load warps from disk
+    Unpack warped exposures from a SingleCellCoadd
 
-    deferred: DeferredDatasetHandle
-        The handle from which to load data
+    scc: `lsst.cell_coadds.SingleCellCoadd`
+        The data class that holds the various image plans
 
     Returns
     --------
-    warp, noise_warp, psf_warp, mfrac_warp, exp_info
+    warp, noise_warp, mfrac_warp, exp_info
     """
-    raise NotImplementedError('implement write_warps')
+    psf = scc.psf
+    assert not isinstance(psf, WarpedPsf)
+
+    warp = afw_image.ExposureF(
+        maskedImage=scc.outer.asMaskedImage(),
+        wcs=scc.wcs
+    )
+    noise_warp = afw_image.ExposureF(
+        maskedImage=scc.noise_realizations[0].asMaskedImage(),
+        wcs=scc.wcs
+    )
+    mfrac_warp = afw_image.ExposureF(
+        maskedImage=scc.mask_fractions.asMaskedImage(),
+        wcs=scc.wcs
+    )
+
+    for _warp in (warp, noise_warp, mfrac_warp):
+        _warp.setPsf(psf)
+
+    exp_info = get_info_struct(1)
+    exp_info['exp_id'] = scc.exp_id
+
+    return warp, noise_warp, mfrac_warp, exp_info
 
 
 def get_info_struct(n=1):
