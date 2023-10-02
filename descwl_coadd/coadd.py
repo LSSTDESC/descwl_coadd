@@ -225,7 +225,8 @@ def make_coadd(
         medvar = noise_warp.variance.array[0, 0]
         noise_warp.variance.array[:, :] = warp.variance.array[:, :]
 
-        psf_warp = warp_psf(psf=psf, wcs=wcs, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
+        psf_warp = warp_psf(psf=psf, wcs=wcs, coadd_wcs=coadd_wcs,
+                            coadd_bbox=coadd_bbox,
                             psf_dims=psf_dims, var=medvar, filter_label=filter_label)
 
         warps = [warp, noise_warp, psf_warp, mfrac_warp]
@@ -604,7 +605,8 @@ def warp_exposures(
     return warp, noise_warp, mfrac_warp, exp_info
 
 
-def warp_psf(psf, wcs, coadd_wcs, coadd_bbox, psf_dims, var=1.0, warper=None, filter_label=None):
+def warp_psf(psf, wcs, coadd_wcs, coadd_bbox, psf_dims,
+             var=1.0, warper=None, filter_label=None):
     """Warp a PSF object to the coadd WCS and bounding box.and
 
     psf: `lsst.afw.detection.Psf`
@@ -1062,6 +1064,7 @@ def get_median_var(exp, remove_poisson):
         var = np.median(variance[use])
 
     return var
+
 
 def get_noise_exp(exp, rng, remove_poisson):
     """
