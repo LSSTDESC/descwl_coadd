@@ -196,23 +196,44 @@ def make_coadd(
                 exp=exp, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
                 rng=rng, remove_poisson=remove_poisson,
             )
-        psf_warp = warp_psf(psf=psf, wcs=wcs, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
-                            psf_dims=psf_dims, var=1/this_exp_info['weight'], filter_label=filter_label)
 
         if this_exp_info['exp_id'] == -9999:
             this_exp_info['exp_id'] = iexp
 
+        # Append ``this_exp_info`` to ``exp_infos`` regardless of whether we
+        # use this exposure or not.
         exp_infos.append(this_exp_info)
 
-        if (maskfrac := this_exp_info['maskfrac']) >= max_maskfrac:
+        # If WarpBoundaryError was raised, ``warp`` will be None and we move on.
+        if not warp:
+            continue
+
+        # Compute the maskfrac from the warp, so as to be consistent with
+        # the implementation on the actual data. This is necessary to do here
+        # because the warp is limited to the coadd bounding box (cell), but the
+        # exp maskfrac is computed over the entire detector.
+        _, maskfrac = get_bad_mask(warp)
+
+        if maskfrac >= max_maskfrac:
             LOG.info("skipping %d maskfrac %f >= %f",
                      this_exp_info['exp_id'], maskfrac, max_maskfrac)
             this_exp_info['flags'][0] |= HIGH_MASKFRAC
             continue
 
-        if this_exp_info['flags'][0] == 0:
-            warps = [warp, noise_warp, psf_warp, mfrac_warp]
-            add_all(stackers, warps, weight=this_exp_info['weight'][0])
+        if this_exp_info['flags'][0] != 0:
+            continue
+
+        # Read in the ``medvar`` stored in the variance plane of
+        # ``noise_warp`` and restore it to the ``variance`` plane of
+        # ``warp``.
+        medvar = noise_warp.variance.array[0, 0]
+        noise_warp.variance.array[:, :] = warp.variance.array[:, :]
+
+        psf_warp = warp_psf(psf=psf, wcs=wcs, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
+                            psf_dims=psf_dims, var=medvar, filter_label=filter_label)
+
+        warps = [warp, noise_warp, psf_warp, mfrac_warp]
+        add_all(stackers, warps, weight=1/medvar)
 
     exp_info = eu.numpy_util.combine_arrlist(exp_infos)
 
@@ -565,10 +586,25 @@ def warp_exposures(
         warps = _get_warps_for_exp(exps2add, wcss, bboxes, warpers, verifys)
         warp, noise_warp, mfrac_warp = warps
 
+        # We don't have a way of persisting ``medvar`` along with the warps and
+        # no easy way of computing it during coaddition, since it is computed
+        # from the equivalent of ``calexp``s.
+        # They may not be meaningful either, given that it is computed over
+        # many pixels beyond the cell boundary. So we check that the variance
+        # plane for ``noise_warp`` is same as that of ``warp`` and hijack it to
+        # store ``medvar``.
+        # This is intended to be a temporary hack to work on simulations,
+        # since with real data, we will run the `ScaleZeroPointTask` to scale
+        # to ``warp`` (and ``noise_warp``s) to have absolute photometric
+        # calibration.
+        np.testing.assert_array_equal(noise_warp.variance.array, warp.variance.array)
+        noise_warp.variance.array[:, :] = medvar
+
     except WarpBoundaryError as err:
         LOG.info('%s', err)
         exp_info['flags'] |= WARP_BOUNDARY
         warp, noise_warp, mfrac_warp = [None] * 3
+
     return warp, noise_warp, mfrac_warp, exp_info
 
 
