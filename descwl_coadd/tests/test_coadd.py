@@ -8,6 +8,7 @@ from descwl_shear_sims.sim import make_sim, get_se_dim
 from descwl_shear_sims.psfs import make_fixed_psf, make_ps_psf
 from descwl_shear_sims.stars import StarCatalog
 
+from descwl_coadd.coadd import get_bad_mask, get_median_var, warp_exposures, warp_psf
 from descwl_coadd.coadd import make_coadd_obs, make_coadd, make_coadd_old
 from descwl_coadd.procflags import WARP_BOUNDARY
 from descwl_shear_sims.galaxies import make_galaxy_catalog
@@ -381,6 +382,84 @@ def test_new_coadds():
     assert np.all(
         cdnew['coadd_mfrac_exp'].image.array == cdold['coadd_mfrac_exp'].image.array
     )
+
+
+@pytest.mark.parametrize('dither', [False, True])
+@pytest.mark.parametrize('rotate', [False, True])
+def test_warped_exposures(dither, rotate):
+    """Test that the warped exposure is same as a coadd with one input."""
+
+    epochs_per_band = 1
+    noise_seed = 9813
+
+    rng = np.random.RandomState(1234)
+    sim_data = _make_sim(
+        rng=rng,
+        psf_type='gauss',
+        bands=['i'],
+        coadd_dim=101,
+        psf_dim=51,
+        dither=dither,
+        rotate=rotate,
+        epochs_per_band=epochs_per_band,
+    )
+
+    exp = sim_data['band_data']['i'][0]
+    medvar = get_median_var(exp, False)
+    rng = np.random.RandomState(noise_seed)
+    warp, noise_warp, mfrac_warp, _ = warp_exposures(
+        exp=exp,
+        coadd_wcs=sim_data['coadd_wcs'],
+        coadd_bbox=sim_data['coadd_bbox'],
+        rng=rng,
+        remove_poisson=False,  # no object poisson noise in sims
+    )
+
+    _, maskfrac1 = get_bad_mask(exp)
+    _, maskfrac2 = get_bad_mask(warp)
+    # This is a trivial test of the maskfrac calculation.
+    assert maskfrac1 == maskfrac2
+
+    psf_warp = warp_psf(psf=exp.getPsf(), wcs=exp.getWcs(),
+                        coadd_wcs=sim_data['coadd_wcs'],
+                        coadd_bbox=sim_data['coadd_bbox'],
+                        psf_dims=sim_data['psf_dims'],
+                        var=medvar, filter_label=exp.getFilter())
+
+    for make_coadd_function in (make_coadd, make_coadd_old,):
+        rng = np.random.RandomState(noise_seed)
+        coadd_dict = make_coadd_function(
+            exps=sim_data['band_data']['i'],
+            coadd_wcs=sim_data['coadd_wcs'],
+            coadd_bbox=sim_data['coadd_bbox'],
+            psf_dims=sim_data['psf_dims'],
+            rng=rng,
+            remove_poisson=False,  # no object poisson noise in sims
+        )
+
+        np.testing.assert_array_equal(
+            coadd_dict['coadd_exp'].image.array,
+            warp.image.array
+        )
+        np.testing.assert_array_equal(
+            coadd_dict['coadd_noise_exp'].image.array,
+            noise_warp.image.array
+        )
+        np.testing.assert_array_equal(
+            coadd_dict['coadd_mfrac_exp'].image.array,
+            mfrac_warp.image.array
+        )
+
+        # Handling of NaNs is not done on the output from warp_psf
+        # and needs special handling.
+        assert (np.nansum(coadd_dict['coadd_psf_exp'].image.array)
+                == np.nansum(psf_warp.image.array))
+
+        use = ~np.isnan(psf_warp.image.array)
+        np.testing.assert_array_equal(
+            coadd_dict['coadd_psf_exp'].image.array[use],
+            psf_warp.image.array[use]
+        )
 
 
 @pytest.mark.skipif('CATSIM_DIR' not in os.environ,
