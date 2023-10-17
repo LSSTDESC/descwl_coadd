@@ -3,7 +3,8 @@
 from .version import __version__
 
 from . import coadd
-from .coadd import make_coadd_obs, make_coadd
+from .coadd import make_coadd_obs, make_coadd, warp_exposures, warp_psf
+from .coadd import DEFAULT_INTERP, MAX_MASKFRAC
 from . import coadd_nowarp
 from .coadd_nowarp import make_coadd_obs_nowarp, make_coadd_nowarp
 from . import coadd_obs
