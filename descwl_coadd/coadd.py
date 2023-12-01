@@ -112,10 +112,8 @@ def make_coadd(
     psf_dims: tuple
         The dimensions of the psf
     rng: np.random.RandomState
-        The random number generator for making noise images
-    psfs: list of PSF objects, optional
-        List of PSF objects. If None, then the PSFs will be extracted from the
-        exposures provided in ``exps``.
+        The random number generator for making noise images (used only if
+        `is_warps` is False.)
     remove_poisson: bool, optional
         If True, remove the poisson noise from the variance
         estimate.
