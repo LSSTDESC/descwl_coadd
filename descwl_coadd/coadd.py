@@ -93,7 +93,7 @@ def make_coadd_obs(
 def make_coadd(
     exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson, psfs=None,
     max_maskfrac=MAX_MASKFRAC,
-    is_warps=False,
+    is_warps=False, warper=None, mfrac_warper=None,
 ):
     """
     make a coadd from the input exposures, working in "online mode",
@@ -128,6 +128,13 @@ def make_coadd(
     is_warps: bool, optional
         If set to True the input exps are actually handles for a data set, from
         which the warps and info can be loaded
+    warper: afw_math.Warper, optional
+        The warper to use for the PSF, and for image and noise if ``is_warps``
+        is False.
+    mfrac_warper: afw_math.Warper, optional
+        The warper to use for the masked fraction image. Used only if
+        ``is_warps`` is False.
+
     Returns
     -------
     coadd_data : dict
@@ -191,6 +198,7 @@ def make_coadd(
             warp, noise_warp, mfrac_warp, this_exp_info = warp_exposures(
                 exp=exp, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
                 rng=rng, remove_poisson=remove_poisson,
+                warper=warper, mfrac_warper=mfrac_warper,
             )
 
         if this_exp_info['exp_id'] == -9999:
@@ -226,7 +234,7 @@ def make_coadd(
         noise_warp.variance.array[:, :] = warp.variance.array[:, :]
 
         psf_warp = warp_psf(psf=psf, wcs=wcs, coadd_wcs=coadd_wcs,
-                            coadd_bbox=coadd_bbox,
+                            coadd_bbox=coadd_bbox, warper=warper,
                             psf_dims=psf_dims, var=medvar, filter_label=filter_label)
 
         warps = [warp, noise_warp, psf_warp, mfrac_warp]
