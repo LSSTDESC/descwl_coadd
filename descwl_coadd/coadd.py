@@ -92,7 +92,7 @@ def make_coadd_obs(
 
 def make_coadd(
     exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson, psfs=None,
-    max_maskfrac=MAX_MASKFRAC, bad_mask_planes=FLAGS2INTERP,
+    wcss=None, max_maskfrac=MAX_MASKFRAC, bad_mask_planes=FLAGS2INTERP,
     is_warps=False, warper=None, mfrac_warper=None,
 ):
     """
@@ -121,6 +121,9 @@ def make_coadd(
     psfs: list of PSF objects, optional
         List of PSF objects. If None, then the PSFs will be extracted from the
         exposures provided in ``exps``.
+    wcss: list of DM wcs objects, optional
+        List of DM wcs objects. If None, then the WCSs will be extracted from
+        the exposures provided in ``exps``.
     max_maskfrac: float, optional
         Maximum allowed masked fraction.  Images masked more than
         this will not be included in the coadd.  Must be in range
@@ -192,7 +195,8 @@ def make_coadd(
     if psfs is None:
         psfs = (exp.getPsf() for exp in exps)
 
-    wcss = (exp.getWcs() for exp in exps)
+    if wcss is None:
+        wcss = (exp.getWcs() for exp in exps)
 
     for iexp, (exp, psf, wcs) in enumerate(get_pbar(list(zip(exps, psfs, wcss)))):
 
