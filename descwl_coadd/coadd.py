@@ -998,7 +998,7 @@ def get_warp(warper, exp, coadd_wcs, coadd_bbox):
     return wexp
 
 
-def make_stacker(coadd_dims):
+def make_stacker(coadd_dims, stats_ctrl=None):
     """
     make an AccumulatorMeanStack to do online coadding
 
@@ -1025,7 +1025,8 @@ def make_stacker(coadd_dims):
         each pixel
     """
 
-    stats_ctrl = afw_math.StatisticsControl()
+    if stats_ctrl is None:
+        stats_ctrl = afw_math.StatisticsControl()
 
     # TODO after sprint
     # Eli will fix bug and will set no_good_pixels_mask to None
