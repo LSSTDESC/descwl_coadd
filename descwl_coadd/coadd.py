@@ -103,7 +103,8 @@ def make_coadd(
     Parameters
     ----------
     exps: list
-        Either a list of exposures or a list of SingleCellCoadd
+        Either a list of exposures (if `is_warps` is True) or a list of
+        PackedExposure objects (if `is_warps` is False).
     coadd_wcs: DM wcs object
         The target wcs
     coadd_bbox: geom.Box2I
@@ -133,8 +134,9 @@ def make_coadd(
         these masks set will be interpolated over (if `is_warps` is True) and
         will count towards the calculation of masked fraction.
     is_warps: bool, optional
-        If set to True the input exps are actually handles for a data set, from
-        which the warps and info can be loaded
+        If set to True the input argument ``exps`` are list of PackedExposure
+        objects containing the warped exposure, noise, masked fraction and
+        an exposure info table. If False, ``exps`` is a list of exposures.
     warper: afw_math.Warper, optional
         The warper to use for the PSF, and for image and noise if ``is_warps``
         is False.
@@ -201,7 +203,11 @@ def make_coadd(
     for iexp, (exp, psf, wcs) in enumerate(get_pbar(list(zip(exps, psfs, wcss)))):
 
         if is_warps:
-            warp, noise_warp, mfrac_warp, this_exp_info = load_warps(exp)
+            # Load the individual warps from the PackedExposure object.
+            warp = exp.warp
+            noise_warp = exp.noise_warp
+            mfrac_warp = exp.mfrac_warp
+            this_exp_info = exp.exp_info
         else:
             warp, noise_warp, mfrac_warp, this_exp_info = warp_exposures(
                 exp=exp, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
