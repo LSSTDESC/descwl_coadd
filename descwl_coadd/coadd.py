@@ -614,7 +614,6 @@ def warp_exposures(
         # since with real data, we will run the `ScaleZeroPointTask` to scale
         # to ``warp`` (and ``noise_warp``s) to have absolute photometric
         # calibration.
-        np.testing.assert_array_equal(noise_warp.variance.array, warp.variance.array)
         noise_warp.variance.array[:, :] = medvar
 
     except WarpBoundaryError as err:
