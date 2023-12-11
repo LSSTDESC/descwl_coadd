@@ -27,12 +27,10 @@ jobs:
           miniforge-version: latest
           miniforge-variant: Mambaforge
 
-      - name: configure conda and install code
+      - name: Install special dependencies with mamba and pip
         shell: bash -l {0}
         run: |
           mamba config --set always_yes yes
-
-          python -m pip install -e .
 
           mamba install -q stackvana=0
 
