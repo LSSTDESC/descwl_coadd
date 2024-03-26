@@ -1,56 +1,57 @@
 name: tests
 
 on:
-      push:
-          branches:
-              - master
-      pull_request: null
+  push:
+    branches:
+      - master
+  pull_request: null
 
 jobs:
-    tests:
-      name: tests
-      strategy:
-          matrix:
-            pyver: ["3.10", "3.11"]
+  tests:
+    name: tests
+    strategy:
+      matrix:
+        pyver: ["3.10", "3.11"]
 
-      runs-on: "ubuntu-latest"
+    runs-on: "ubuntu-latest"
 
-      steps:
-          - uses: actions/checkout@v2
+    steps:
+      - uses: actions/checkout@v2
 
-          - uses: conda-incubator/setup-miniconda@v2
-            with:
-                python-version: ${{ matrix.pyver }}
-                channels: conda-forge
-                channel-priority: strict
-                show-channel-urls: true
+      - uses: conda-incubator/setup-miniconda@v2
+        with:
+          python-version: ${{ matrix.pyver }}
+          channels: conda-forge,defaults
+          channel-priority: strict
+          show-channel-urls: true
+          miniforge-version: latest
+          miniforge-variant: Mambaforge
 
-          - name: Install special dependencies with conda and pip
-            shell: bash -l {0}
-            run: |
-                conda config --set always_yes yes
-                conda install -q mamba
+      - name: Install special dependencies with mamba and pip
+        shell: bash -l {0}
+        run: |
+          mamba config --set always_yes yes
 
-                mamba install -q stackvana=0
+          mamba install -q stackvana=0
 
-                mamba install -q \
-                  flake8 \
-                  pytest \
-                  numpy \
-                  "galsim>=2.3" \
-                  "numba!=0.54.0" \
-                  ngmix \
-                  lsstdesc-weaklensingdeblending \
-                  fitsio
+          mamba install -q \
+            flake8 \
+            pytest \
+            numpy \
+            "galsim>=2.3" \
+            "numba!=0.54.0" \
+            ngmix \
+            lsstdesc-weaklensingdeblending \
+            fitsio
 
-                pip install --no-deps git+https://github.com/LSSTDESC/descwl-shear-sims.git
+          pip install --no-deps git+https://github.com/LSSTDESC/descwl-shear-sims.git
 
-          - name: Lint with flake8
-            shell: bash -l {0}
-            run: |
-                flake8 descwl_coadd
+      - name: Lint with flake8
+        shell: bash -l {0}
+        run: |
+          flake8 descwl_coadd
 
-          - name: Run pytest
-            shell: bash -l {0}
-            run: |
-                pytest -vv descwl_coadd
+      - name: Run pytest
+        shell: bash -l {0}
+        run: |
+          pytest -vv descwl_coadd

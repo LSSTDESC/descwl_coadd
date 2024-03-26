@@ -50,7 +50,8 @@ class OneStarCatalog(object):
 
         shifts = [galsim.PositionD(0, 0)]
 
-        return objlist, shifts
+        redshifts = None
+        return objlist, shifts, redshifts
 
 
 def _make_one_star_sim(

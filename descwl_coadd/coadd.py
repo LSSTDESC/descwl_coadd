@@ -92,8 +92,8 @@ def make_coadd_obs(
 
 def make_coadd(
     exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson, psfs=None,
-    max_maskfrac=MAX_MASKFRAC,
-    is_warps=False,
+    wcss=None, max_maskfrac=MAX_MASKFRAC, bad_mask_planes=FLAGS2INTERP,
+    is_warps=False, warper=None, mfrac_warper=None,
 ):
     """
     make a coadd from the input exposures, working in "online mode",
@@ -103,7 +103,8 @@ def make_coadd(
     Parameters
     ----------
     exps: list
-        Either a list of exposures or a list of SingleCellCoadd
+        Either a list of exposures (if `is_warps` is True) or a list of
+        PackedExposure objects (if `is_warps` is False).
     coadd_wcs: DM wcs object
         The target wcs
     coadd_bbox: geom.Box2I
@@ -111,23 +112,36 @@ def make_coadd(
     psf_dims: tuple
         The dimensions of the psf
     rng: np.random.RandomState
-        The random number generator for making noise images
-    psfs: list of PSF objects, optional
-        List of PSF objects. If None, then the PSFs will be extracted from the
-        exposures provided in ``exps``.
+        The random number generator for making noise images (used only if
+        `is_warps` is False.)
     remove_poisson: bool, optional
         If True, remove the poisson noise from the variance
         estimate.
     psfs: list of PSF objects, optional
         List of PSF objects. If None, then the PSFs will be extracted from the
         exposures provided in ``exps``.
+    wcss: list of DM wcs objects, optional
+        List of DM wcs objects. If None, then the WCSs will be extracted from
+        the exposures provided in ``exps``.
     max_maskfrac: float, optional
         Maximum allowed masked fraction.  Images masked more than
         this will not be included in the coadd.  Must be in range
         [0, 1]
+    bad_mask_planes: list of str, optional
+        List of mask plane names to be considered as bad pixels. Pixels with
+        these masks set will be interpolated over (if `is_warps` is True) and
+        will count towards the calculation of masked fraction.
     is_warps: bool, optional
-        If set to True the input exps are actually handles for a data set, from
-        which the warps and info can be loaded
+        If set to True the input argument ``exps`` are list of PackedExposure
+        objects containing the warped exposure, noise, masked fraction and
+        an exposure info table. If False, ``exps`` is a list of exposures.
+    warper: afw_math.Warper, optional
+        The warper to use for the PSF, and for image and noise if ``is_warps``
+        is False.
+    mfrac_warper: afw_math.Warper, optional
+        The warper to use for the masked fraction image. Used only if
+        ``is_warps`` is False.
+
     Returns
     -------
     coadd_data : dict
@@ -181,16 +195,22 @@ def make_coadd(
     if psfs is None:
         psfs = (exp.getPsf() for exp in exps)
 
-    wcss = (exp.getWcs() for exp in exps)
+    if wcss is None:
+        wcss = (exp.getWcs() for exp in exps)
 
     for iexp, (exp, psf, wcs) in enumerate(get_pbar(list(zip(exps, psfs, wcss)))):
 
         if is_warps:
-            warp, noise_warp, mfrac_warp, this_exp_info = load_warps(exp)
+            # Load the individual warps from the PackedExposure object.
+            warp = exp.warp
+            noise_warp = exp.noise_warp
+            mfrac_warp = exp.mfrac_warp
+            this_exp_info = exp.exp_info
         else:
             warp, noise_warp, mfrac_warp, this_exp_info = warp_exposures(
                 exp=exp, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
-                rng=rng, remove_poisson=remove_poisson,
+                rng=rng, remove_poisson=remove_poisson, bad_mask_planes=bad_mask_planes,
+                warper=warper, mfrac_warper=mfrac_warper,
             )
 
         if this_exp_info['exp_id'] == -9999:
@@ -208,7 +228,7 @@ def make_coadd(
         # the implementation on the actual data. This is necessary to do here
         # because the warp is limited to the coadd bounding box (cell), but the
         # exp maskfrac is computed over the entire detector.
-        _, maskfrac = get_bad_mask(warp)
+        _, maskfrac = get_bad_mask(warp, bad_mask_planes=bad_mask_planes)
 
         if maskfrac >= max_maskfrac:
             LOG.info("skipping %d maskfrac %f >= %f",
@@ -226,7 +246,7 @@ def make_coadd(
         noise_warp.variance.array[:, :] = warp.variance.array[:, :]
 
         psf_warp = warp_psf(psf=psf, wcs=wcs, coadd_wcs=coadd_wcs,
-                            coadd_bbox=coadd_bbox,
+                            coadd_bbox=coadd_bbox, warper=warper,
                             psf_dims=psf_dims, var=medvar, filter_label=filter_label)
 
         warps = [warp, noise_warp, psf_warp, mfrac_warp]
@@ -483,7 +503,7 @@ def _get_default_mfrac_warper():
 
 
 def warp_exposures(
-    exp, coadd_wcs, coadd_bbox, rng, remove_poisson,
+    exp, coadd_wcs, coadd_bbox, rng, remove_poisson, bad_mask_planes=FLAGS2INTERP,
     warper=None, mfrac_warper=None, verify=True,
 ):
     """
@@ -553,7 +573,7 @@ def warp_exposures(
     except AttributeError:
         exp_id = -9999
 
-    bad_msk, maskfrac = get_bad_mask(expobj)
+    bad_msk, maskfrac = get_bad_mask(expobj, bad_mask_planes=bad_mask_planes)
 
     noise_exp, medvar = get_noise_exp(
         exp=expobj, rng=rng, remove_poisson=remove_poisson,
@@ -594,7 +614,6 @@ def warp_exposures(
         # since with real data, we will run the `ScaleZeroPointTask` to scale
         # to ``warp`` (and ``noise_warp``s) to have absolute photometric
         # calibration.
-        np.testing.assert_array_equal(noise_warp.variance.array, warp.variance.array)
         noise_warp.variance.array[:, :] = medvar
 
     except WarpBoundaryError as err:
@@ -824,7 +843,7 @@ def extract_coadd_psf(coadd_psf_exp):
     )
 
 
-def get_bad_mask(exp):
+def get_bad_mask(exp, bad_mask_planes=FLAGS2INTERP):
     """
     get the bad mask and masked fraction
 
@@ -832,6 +851,8 @@ def get_bad_mask(exp):
     ----------
     exp: lsst.afw.ExposureF
         The exposure data
+    bad_mask_planes: list, optional
+        List of mask planes to consider bad
 
     Returns
     -------
@@ -846,7 +867,7 @@ def get_bad_mask(exp):
 
     bmask = exp.mask.array
 
-    flags2interp = exp.mask.getPlaneBitMask(FLAGS2INTERP)
+    flags2interp = exp.mask.getPlaneBitMask(bad_mask_planes)
     bad_msk = (weight <= 0) | ((bmask & flags2interp) != 0)
 
     npix = bad_msk.size
@@ -984,7 +1005,7 @@ def get_warp(warper, exp, coadd_wcs, coadd_bbox):
     return wexp
 
 
-def make_stacker(coadd_dims):
+def make_stacker(coadd_dims, stats_ctrl=None):
     """
     make an AccumulatorMeanStack to do online coadding
 
@@ -1011,7 +1032,8 @@ def make_stacker(coadd_dims):
         each pixel
     """
 
-    stats_ctrl = afw_math.StatisticsControl()
+    if stats_ctrl is None:
+        stats_ctrl = afw_math.StatisticsControl()
 
     # TODO after sprint
     # Eli will fix bug and will set no_good_pixels_mask to None
