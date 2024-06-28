@@ -6,9 +6,9 @@ from .coadd import (
     get_noise_exp,
     get_bad_mask,
     make_mfrac_exp,
-    interp_nocheck,
     get_psf_exp,
     get_info_struct,
+    get_default_image_interpolator,
 )
 from .procflags import HIGH_MASKFRAC
 from .defaults import MAX_MASKFRAC
@@ -64,7 +64,7 @@ def make_coadd_obs_nowarp(exp, psf_dims, rng, remove_poisson):
     return coadd_obs, exp_info
 
 
-def make_coadd_nowarp(exp, psf_dims, rng, remove_poisson):
+def make_coadd_nowarp(exp, psf_dims, rng, remove_poisson, interpolator=None):
     """
     make a coadd from the input exposures, working in "online mode",
     adding each exposure separately.  This saves memory when
@@ -81,6 +81,9 @@ def make_coadd_nowarp(exp, psf_dims, rng, remove_poisson):
     remove_poisson: bool
         If True, remove the poisson noise from the variance
         estimate.
+    interpolator: interpolator object, optional
+        An object or function used to interpolate pixels.
+        Must be callable as interpolator(exposure)
 
     Returns
     -------
@@ -98,6 +101,9 @@ def make_coadd_nowarp(exp, psf_dims, rng, remove_poisson):
     """
 
     LOG.info('making coadd obs')
+
+    if interpolator is None:
+        interpolator = get_default_image_interpolator()
 
     check_psf_dims(psf_dims)
 
@@ -123,7 +129,8 @@ def make_coadd_nowarp(exp, psf_dims, rng, remove_poisson):
 
         if maskfrac > 0:
             # images modified internally
-            interp_nocheck(exp=exp, noise_exp=noise_exp, bad_msk=bad_msk)
+            interpolator(exp)
+            interpolator(noise_exp)
 
         cen, cen_skypos = get_coadd_center(
             coadd_wcs=exp.getWcs(), coadd_bbox=exp.getBBox(),

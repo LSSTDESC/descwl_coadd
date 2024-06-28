@@ -11,7 +11,7 @@ from lsst.meas.algorithms import KernelPsf
 from lsst.afw.math import FixedKernel
 
 from . import vis
-from .interp import interp_image_nocheck
+from .interp import get_bad_mask
 from .util import get_coadd_center
 from .coadd_obs import CoaddObs
 from .exceptions import WarpBoundaryError
@@ -93,7 +93,7 @@ def make_coadd_obs(
 def make_coadd(
     exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson, psfs=None,
     wcss=None, max_maskfrac=MAX_MASKFRAC, bad_mask_planes=FLAGS2INTERP,
-    is_warps=False, warper=None, mfrac_warper=None,
+    is_warps=False, interpolator=None, warper=None, mfrac_warper=None,
 ):
     """
     make a coadd from the input exposures, working in "online mode",
@@ -135,6 +135,9 @@ def make_coadd(
         If set to True the input argument ``exps`` are list of PackedExposure
         objects containing the warped exposure, noise, masked fraction and
         an exposure info table. If False, ``exps`` is a list of exposures.
+    interpolator: interpolator object, optional
+        An object or function used to interpolate pixels.
+        Must be callable as interpolator(exposure)
     warper: afw_math.Warper, optional
         The warper to use for the PSF, and for image and noise if ``is_warps``
         is False.
@@ -210,7 +213,7 @@ def make_coadd(
             warp, noise_warp, mfrac_warp, this_exp_info = warp_exposures(
                 exp=exp, coadd_wcs=coadd_wcs, coadd_bbox=coadd_bbox,
                 rng=rng, remove_poisson=remove_poisson, bad_mask_planes=bad_mask_planes,
-                warper=warper, mfrac_warper=mfrac_warper,
+                interpolator=interpolator, warper=warper, mfrac_warper=mfrac_warper,
             )
 
         if this_exp_info['exp_id'] == -9999:
@@ -415,7 +418,7 @@ def make_coadd_old(
 
         if maskfrac > 0:
             # images modified internally
-            interp_nocheck(exp=exp, noise_exp=noise_exp, bad_msk=bad_msk)
+            _interp_nocheck_old(exp=exp, noise_exp=noise_exp, bad_msk=bad_msk)
 
         psf_exp = get_psf_exp(
             exp=exp,
@@ -472,6 +475,14 @@ def make_coadd_old(
     return result
 
 
+def get_default_image_interpolator(bad_mask_planes=FLAGS2INTERP):
+    """
+    Get the default interpolator
+    """
+    from .interp import CTInterpolator
+    return CTInterpolator(bad_mask_planes=FLAGS2INTERP)
+
+
 def _get_default_image_warper():
     """Get the default warper instances for warping images (and PSFs).
 
@@ -504,7 +515,7 @@ def _get_default_mfrac_warper():
 
 def warp_exposures(
     exp, coadd_wcs, coadd_bbox, rng, remove_poisson, bad_mask_planes=FLAGS2INTERP,
-    warper=None, mfrac_warper=None, verify=True,
+    interpolator=None, warper=None, mfrac_warper=None, verify=True,
 ):
     """
     Warps the input exposures, noise image and masked fraction
@@ -524,6 +535,9 @@ def warp_exposures(
     remove_poisson: bool
         If True, remove the poisson noise from the variance
         estimate.
+    interpolator: interpolator object, optional
+        An object or function used to interpolate pixels.
+        Must be callable as interpolator(exposure)
     warper: afw_math.Warper, optional
         The warper to use for the image, noise, and psf
     mfrac_warper: afw_math.Warper, optional
@@ -539,6 +553,8 @@ def warp_exposures(
     ----
         - make a list of noise exposures
     """
+    if interpolator is None:
+        interpolator = get_default_image_interpolator()
 
     # can re-use the warper for each coadd type except the mfrac where we use
     # linear
@@ -566,8 +582,6 @@ def warp_exposures(
     else:
         expobj = exp
 
-    # TODO use exp.getId() when it arrives in weekly 44.  For now use an index
-    # 0::len(exps)
     try:
         exp_id = expobj.getId()
     except AttributeError:
@@ -588,8 +602,11 @@ def warp_exposures(
         mfrac_exp = make_mfrac_exp(mfrac_msk=bad_msk, exp=expobj)
 
         if 0 < maskfrac < 1:
-            # images modified internally
-            interp_nocheck(exp=expobj, noise_exp=noise_exp, bad_msk=bad_msk)
+            # This modifies the image internally and sets INTRP in mask
+            interpolator(expobj)
+            interpolator(noise_exp)
+
+            # interp_nocheck(exp=expobj, noise_exp=noise_exp, bad_msk=bad_msk)
 
         # we use this to check no edges made it into the coadd
         add_boundary_bit(expobj)
@@ -843,42 +860,7 @@ def extract_coadd_psf(coadd_psf_exp):
     )
 
 
-def get_bad_mask(exp, bad_mask_planes=FLAGS2INTERP):
-    """
-    get the bad mask and masked fraction
-
-    Parameters
-    ----------
-    exp: lsst.afw.ExposureF
-        The exposure data
-    bad_mask_planes: list, optional
-        List of mask planes to consider bad
-
-    Returns
-    -------
-    bad_msk: ndarray
-        A bool array with True if weight <= 0 or defaults.FLAGS2INTERP
-        is set
-    maskfrac: float
-        The masked fraction
-    """
-    var = exp.variance.array
-    weight = 1/var
-
-    bmask = exp.mask.array
-
-    flags2interp = exp.mask.getPlaneBitMask(bad_mask_planes)
-    bad_msk = (weight <= 0) | ((bmask & flags2interp) != 0)
-
-    npix = bad_msk.size
-
-    nbad = bad_msk.sum()
-    maskfrac = nbad/npix
-
-    return bad_msk, maskfrac
-
-
-def interp_nocheck(exp, noise_exp, bad_msk):
+def _interp_nocheck_old(exp, noise_exp, bad_msk):
     """
     Interpolate the exposure and noise exposure, modifying
     them in place
@@ -894,6 +876,7 @@ def interp_nocheck(exp, noise_exp, bad_msk):
     bad_msk: array
         A bool array with True set for masked pixels
     """
+    from .interp import interp_image_nocheck
 
     iimage = interp_image_nocheck(image=exp.image.array, bad_msk=bad_msk)
     inoise = interp_image_nocheck(image=noise_exp.image.array, bad_msk=bad_msk)

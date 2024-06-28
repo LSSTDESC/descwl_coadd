@@ -7,6 +7,7 @@ from scipy.interpolate import CloughTocher2DInterpolator
 
 import numba
 from numba import njit
+from .defaults import FLAGS2INTERP
 
 
 @njit
@@ -130,6 +131,78 @@ def interp_image_nocheck(image, bad_msk):
     interp_image[bad_msk] = img_interp(bad_pix)
 
     return interp_image
+
+
+class CTInterpolator(object):
+    """
+    A class wrapping the interp_image_nocheck function to do
+    an inplace interp and sets the INTRP bit
+
+    This conforms to the interface required for the interpolator
+    sent to descwl_coadd.coadd.warp_exposures
+
+    This is a "functor" meaning the object can be called
+        interpolator(exposure)
+    """
+    def __init__(self, bad_mask_planes=FLAGS2INTERP):
+        self.bad_mask_planes = bad_mask_planes
+
+    def __call__(self, exp):
+        """
+        Interpolate the exposure in place
+
+        Parameters
+        ----------
+        exp: ExposureF
+            The exposure object to interpolate.  The INTRP flag will be
+            set for any pixels that are interpolated
+        """
+        bad_msk, _ = get_bad_mask(
+            exp=exp, bad_mask_planes=self.bad_mask_planes,
+        )
+        iimage = interp_image_nocheck(exp.image.array, bad_msk)
+
+        exp.image.array[:, :] = iimage
+
+        interp_flag = exp.mask.getPlaneBitMask('INTRP')
+        exp.mask.array[bad_msk] |= interp_flag
+
+        assert not np.any(np.isnan(exp.image.array[bad_msk]))
+
+
+def get_bad_mask(exp, bad_mask_planes=FLAGS2INTERP):
+    """
+    get the bad mask and masked fraction
+
+    Parameters
+    ----------
+    exp: lsst.afw.ExposureF
+        The exposure data
+    bad_mask_planes: list, optional
+        List of mask planes to consider bad
+
+    Returns
+    -------
+    bad_msk: ndarray
+        A bool array with True if weight <= 0 or defaults.FLAGS2INTERP
+        is set
+    maskfrac: float
+        The masked fraction
+    """
+    var = exp.variance.array
+    weight = 1/var
+
+    bmask = exp.mask.array
+
+    flags2interp = exp.mask.getPlaneBitMask(bad_mask_planes)
+    bad_msk = (weight <= 0) | ((bmask & flags2interp) != 0)
+
+    npix = bad_msk.size
+
+    nbad = bad_msk.sum()
+    maskfrac = nbad/npix
+
+    return bad_msk, maskfrac
 
 
 def replace_flag_with_noise(*, rng, image, noise_image, weight, mask, flag):
