@@ -5,8 +5,6 @@ import galsim
 from descwl_shear_sims.sim import make_sim
 from descwl_shear_sims.psfs import make_fixed_psf
 from descwl_shear_sims.surveys import get_survey
-from descwl_shear_sims.layout import Layout
-
 from descwl_coadd.coadd import make_coadd_obs
 import logging
 
