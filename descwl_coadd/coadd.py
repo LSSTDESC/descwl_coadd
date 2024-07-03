@@ -575,8 +575,6 @@ def warp_exposures(
 
     verifys = [verify]*3
 
-    LOG.info('warping and adding exposures')
-
     if isinstance(exp, DeferredDatasetHandle):
         expobj = exp.get()
     else:
