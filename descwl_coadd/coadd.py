@@ -688,7 +688,6 @@ def warp_psf(psf, wcs, coadd_wcs, coadd_bbox, psf_dims,
             var=var,
             filter_label=filter_label)
 
-    LOG.info('warping PSF')
     psf_warp, = _get_warps_for_exp([psf_exp], wcss, bboxes, warpers, [False])
 
     return psf_warp
