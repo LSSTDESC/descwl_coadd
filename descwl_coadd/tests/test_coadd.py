@@ -11,6 +11,7 @@ from descwl_shear_sims.stars import StarCatalog
 from descwl_coadd.coadd import get_bad_mask, get_median_var, warp_exposures, warp_psf
 from descwl_coadd.coadd import make_coadd_obs, make_coadd, make_coadd_old
 from descwl_coadd.procflags import WARP_BOUNDARY
+from descwl_coadd.interp import CTInterpolator
 from descwl_shear_sims.galaxies import make_galaxy_catalog
 import logging
 
@@ -104,6 +105,51 @@ def test_coadds_smoke(dither, rotate):
             psf_dims=sim_data['psf_dims'],
             rng=rng,
             remove_poisson=False,  # no object poisson noise in sims
+        )
+
+        for tp in ['exp', 'noise_exp', 'mfrac_exp']:
+            name = f'coadd_{tp}'
+            psf = coadd_data[name].getPsf()
+            assert psf is not None
+
+        coadd_dims = (coadd_dim, )*2
+        psf_dims = (psf_dim, )*2
+        assert coadd_data['coadd_exp'].image.array.shape == coadd_dims
+        assert coadd_data['coadd_psf_exp'].image.array.shape == psf_dims
+
+        assert np.all(np.isfinite(coadd_data['coadd_psf_exp'].image.array))
+        assert np.all(coadd_data['coadd_mfrac_exp'].image.array == 0)
+
+
+@pytest.mark.parametrize('buff', [4, 5])
+def test_coadds_with_interpolator_smoke(buff):
+    rng = np.random.RandomState(123)
+
+    coadd_dim = 101
+    psf_dim = 51
+
+    bands = ['r', 'i', 'z']
+    sim_data = _make_sim(
+        rng=rng, psf_type='gauss', bands=bands,
+        coadd_dim=coadd_dim, psf_dim=psf_dim,
+    )
+
+    interpolator = CTInterpolator(buff=buff)
+
+    # coadd each band separately
+    bdata = sim_data['band_data']
+    for band in bands:
+        assert band in bdata
+        exps = bdata[band]
+
+        coadd_data = make_coadd(
+            exps=exps,
+            coadd_wcs=sim_data['coadd_wcs'],
+            coadd_bbox=sim_data['coadd_bbox'],
+            psf_dims=sim_data['psf_dims'],
+            rng=rng,
+            remove_poisson=False,  # no object poisson noise in sims
+            interpolator=interpolator,
         )
 
         for tp in ['exp', 'noise_exp', 'mfrac_exp']:

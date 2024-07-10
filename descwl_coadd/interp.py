@@ -7,11 +7,11 @@ from scipy.interpolate import CloughTocher2DInterpolator
 
 import numba
 from numba import njit
-from .defaults import FLAGS2INTERP
+from .defaults import FLAGS2INTERP, DEFAULT_GOOD_PIXEL_BUFF
 
 
 @njit
-def _get_nearby_good_pixels(image, bad_msk, nbad, buff=4):
+def _get_nearby_good_pixels(image, bad_msk, nbad, buff=DEFAULT_GOOD_PIXEL_BUFF):
     """
     get the set of good pixels surrounding bad pixels.
 
@@ -93,7 +93,7 @@ def _get_nearby_good_pixels(image, bad_msk, nbad, buff=4):
     return bad_pix, good_pix, good_im, good_ind
 
 
-def interp_image_nocheck(image, bad_msk):
+def interp_image_nocheck(image, bad_msk, buff=DEFAULT_GOOD_PIXEL_BUFF):
     """
     interpolate the bad pixels in an image with no checking on the fraction of
     masked pixels
@@ -114,7 +114,7 @@ def interp_image_nocheck(image, bad_msk):
     nbad = bad_msk.sum()
 
     bad_pix, good_pix, good_im, good_ind = \
-        _get_nearby_good_pixels(image, bad_msk, nbad)
+        _get_nearby_good_pixels(image, bad_msk, nbad, buff=buff)
 
     # extract unique ones
     gi, ind = np.unique(good_ind, return_index=True)
@@ -144,8 +144,9 @@ class CTInterpolator(object):
     This is a "functor" meaning the object can be called
         interpolator(exposure)
     """
-    def __init__(self, bad_mask_planes=FLAGS2INTERP):
+    def __init__(self, bad_mask_planes=FLAGS2INTERP, buff=DEFAULT_GOOD_PIXEL_BUFF):
         self.bad_mask_planes = bad_mask_planes
+        self.buff = buff
 
     def __call__(self, exp):
         """
@@ -160,7 +161,7 @@ class CTInterpolator(object):
         bad_msk, _ = get_bad_mask(
             exp=exp, bad_mask_planes=self.bad_mask_planes,
         )
-        iimage = interp_image_nocheck(exp.image.array, bad_msk)
+        iimage = interp_image_nocheck(exp.image.array, bad_msk, buff=self.buff)
 
         exp.image.array[:, :] = iimage
 
