@@ -141,14 +141,13 @@ class CTInterpolator(object):
     This conforms to the interface required for the interpolator
     sent to descwl_coadd.coadd.warp_exposures
 
-    This is a "functor" meaning the object can be called
-        interpolator(exposure)
+        interpolator.run(exposure)
     """
     def __init__(self, bad_mask_planes=FLAGS2INTERP, buff=DEFAULT_GOOD_PIXEL_BUFF):
         self.bad_mask_planes = bad_mask_planes
         self.buff = buff
 
-    def __call__(self, exp):
+    def run(self, exp):
         """
         Interpolate the exposure in place
 

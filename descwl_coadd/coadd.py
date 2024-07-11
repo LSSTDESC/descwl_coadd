@@ -137,7 +137,7 @@ def make_coadd(
         an exposure info table. If False, ``exps`` is a list of exposures.
     interpolator: interpolator object, optional
         An object or function used to interpolate pixels.
-        Must be callable as interpolator(exposure)
+        Must be usable as interpolator.run(exposure)
     warper: afw_math.Warper, optional
         The warper to use for the PSF, and for image and noise if ``is_warps``
         is False.
@@ -537,7 +537,7 @@ def warp_exposures(
         estimate.
     interpolator: interpolator object, optional
         An object or function used to interpolate pixels.
-        Must be callable as interpolator(exposure)
+        Must be runable as interpolator.run(exposure)
     warper: afw_math.Warper, optional
         The warper to use for the image, noise, and psf
     mfrac_warper: afw_math.Warper, optional
@@ -601,8 +601,8 @@ def warp_exposures(
 
         if 0 < maskfrac < 1:
             # This modifies the image internally and sets INTRP in mask
-            interpolator(expobj)
-            interpolator(noise_exp)
+            interpolator.run(expobj)
+            interpolator.run(noise_exp)
 
             # interp_nocheck(exp=expobj, noise_exp=noise_exp, bad_msk=bad_msk)
 

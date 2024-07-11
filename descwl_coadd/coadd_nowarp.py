@@ -129,8 +129,8 @@ def make_coadd_nowarp(exp, psf_dims, rng, remove_poisson, interpolator=None):
 
         if maskfrac > 0:
             # images modified internally
-            interpolator(exp)
-            interpolator(noise_exp)
+            interpolator.run(exp)
+            interpolator.run(noise_exp)
 
         cen, cen_skypos = get_coadd_center(
             coadd_wcs=exp.getWcs(), coadd_bbox=exp.getBBox(),
