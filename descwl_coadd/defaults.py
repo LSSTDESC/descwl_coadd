@@ -16,3 +16,6 @@ BOUNDARY_SIZE = 3
 # included in the coadd
 # TODO make configurable
 MAX_MASKFRAC = 0.9
+
+# used for getting good pixels around a set of bad pixels
+DEFAULT_GOOD_PIXEL_BUFF = 4
