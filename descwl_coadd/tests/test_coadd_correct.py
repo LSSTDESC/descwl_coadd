@@ -78,7 +78,7 @@ def test_coadd_image_correct(crazy_wcs, crazy_obj):
     world_origin = galsim.CelestialCoord(0 * galsim.degrees, 0 * galsim.degrees)
 
     aff = galsim.PixelScale(scale).affine()
-    aff = aff.withOrigin(
+    aff = aff.shiftOrigin(
         galsim.PositionD(coadd_cen, coadd_cen),
         galsim.PositionD(0, 0)
     )
@@ -112,7 +112,7 @@ def test_coadd_image_correct(crazy_wcs, crazy_obj):
         if crazy_wcs:
             shear = galsim.Shear(g1=rng.normal() * 0.01, g2=rng.normal() * 0.01)
             aff = galsim.ShearWCS(scale, shear).affine()
-            aff = aff.withOrigin(
+            aff = aff.shiftOrigin(
                 galsim.PositionD(se_cen, se_cen), galsim.PositionD(0, 0))
             wcs = galsim.TanWCS(
                 aff,
@@ -120,7 +120,7 @@ def test_coadd_image_correct(crazy_wcs, crazy_obj):
             )
         else:
             aff = galsim.PixelScale(scale).affine()
-            aff = aff.withOrigin(
+            aff = aff.shiftOrigin(
                 galsim.PositionD(se_cen, se_cen), galsim.PositionD(0, 0))
             wcs = galsim.TanWCS(
                 aff,
