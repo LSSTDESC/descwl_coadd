@@ -10,9 +10,15 @@ from descwl_shear_sims.stars import StarCatalog
 
 from descwl_coadd.coadd import get_bad_mask, get_median_var, warp_exposures, warp_psf
 from descwl_coadd.coadd import make_coadd_obs, make_coadd, make_coadd_old
+from descwl_coadd.coadd import FLAGS2INTERP
 from descwl_coadd.procflags import WARP_BOUNDARY
 from descwl_coadd.interp import CTInterpolator
 from descwl_shear_sims.galaxies import make_galaxy_catalog
+
+from lsst.meas.algorithms.cloughTocher2DInterpolator import (
+    CloughTocher2DInterpolateTask,
+)
+
 import logging
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO)
@@ -164,6 +170,61 @@ def test_coadds_with_interpolator_smoke(buff):
 
         assert np.all(np.isfinite(coadd_data['coadd_psf_exp'].image.array))
         assert np.all(coadd_data['coadd_mfrac_exp'].image.array == 0)
+
+
+@pytest.mark.parametrize('buff', [4, 5])
+def test_coadd_equality_with_dm_interpolator(buff):
+    """Test that the DM-implementation of the interpolator behaves identical.
+    """
+    rng = np.random.RandomState(123)
+
+    coadd_dim = 101
+    psf_dim = 51
+
+    bands = ['r', 'i', 'z']
+    sim_data = _make_sim(
+        rng=rng, psf_type='gauss', bands=bands,
+        coadd_dim=coadd_dim, psf_dim=psf_dim,
+    )
+
+    our_interpolator = CTInterpolator(buff=buff)
+
+    config = CloughTocher2DInterpolateTask.ConfigClass()
+    config.interpLength = buff
+    config.badMaskPlanes = FLAGS2INTERP
+
+    dm_interpolator = CloughTocher2DInterpolateTask(config=config)
+
+    # coadd each band separately
+    bdata = sim_data['band_data']
+    for band in bands:
+        assert band in bdata
+        exps = bdata[band]
+
+        coadd_data = make_coadd(
+            exps=exps,
+            coadd_wcs=sim_data['coadd_wcs'],
+            coadd_bbox=sim_data['coadd_bbox'],
+            psf_dims=sim_data['psf_dims'],
+            rng=rng,
+            remove_poisson=False,  # no object poisson noise in sims
+            interpolator=our_interpolator,
+        )
+
+        dm_coadd_data = make_coadd(
+            exps=exps,
+            coadd_wcs=sim_data['coadd_wcs'],
+            coadd_bbox=sim_data['coadd_bbox'],
+            psf_dims=sim_data['psf_dims'],
+            rng=rng,
+            remove_poisson=False,  # no object poisson noise in sims
+            interpolator=dm_interpolator,
+        )
+
+        # Compare only the main exposure since the noise realizations are
+        # different and mfrac is not affected by the interpolator.
+        assert (coadd_data['coadd_exp'].image.array ==
+                dm_coadd_data['coadd_exp'].image.array).all()
 
 
 @pytest.mark.parametrize('dither', [False, True])
