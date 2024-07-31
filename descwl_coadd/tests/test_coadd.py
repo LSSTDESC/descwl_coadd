@@ -210,8 +210,10 @@ def test_coadd_equality_with_dm_interpolator(buff):
         bit_mask = exps[0].mask.getPlaneBitMask(FLAGS2INTERP)
         assert any((exp.mask.array & bit_mask).any() for exp in exps)
 
+        # Since interpolation changes the exposures in place, make a deep
+        # copy before making the coadds.
         coadd_data = make_coadd(
-            exps=exps,
+            exps=[exp.clone() for exp in exps],
             coadd_wcs=sim_data['coadd_wcs'],
             coadd_bbox=sim_data['coadd_bbox'],
             psf_dims=sim_data['psf_dims'],
