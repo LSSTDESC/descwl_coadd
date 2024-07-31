@@ -122,7 +122,8 @@ def test_coadds_smoke(dither, rotate):
 
 
 @pytest.mark.parametrize('buff', [4, 5])
-def test_coadds_with_interpolator_smoke(buff):
+@pytest.mark.parametrize('bad_columns', [False, True])
+def test_coadds_with_interpolator_smoke(buff, bad_columns):
     rng = np.random.RandomState(123)
 
     coadd_dim = 101
@@ -132,6 +133,7 @@ def test_coadds_with_interpolator_smoke(buff):
     sim_data = _make_sim(
         rng=rng, psf_type='gauss', bands=bands,
         coadd_dim=coadd_dim, psf_dim=psf_dim,
+        bad_columns=bad_columns,
     )
 
     interpolator = CTInterpolator(buff=buff)
@@ -163,7 +165,9 @@ def test_coadds_with_interpolator_smoke(buff):
         assert coadd_data['coadd_psf_exp'].image.array.shape == psf_dims
 
         assert np.all(np.isfinite(coadd_data['coadd_psf_exp'].image.array))
-        assert np.all(coadd_data['coadd_mfrac_exp'].image.array == 0)
+
+        if not bad_columns:
+            assert np.all(coadd_data['coadd_mfrac_exp'].image.array == 0)
 
 
 @pytest.mark.parametrize('dither', [False, True])
