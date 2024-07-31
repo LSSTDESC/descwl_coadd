@@ -233,8 +233,10 @@ def test_coadd_equality_with_dm_interpolator(buff):
 
         # Compare only the main exposure since the noise realizations are
         # different and mfrac is not affected by the interpolator.
-        assert (coadd_data['coadd_exp'].image.array ==
-                dm_coadd_data['coadd_exp'].image.array).all()
+        np.testing.assert_array_equal(
+            coadd_data['coadd_exp'].image.array,
+            dm_coadd_data['coadd_exp'].image.array,
+        )
 
 
 @pytest.mark.parametrize('dither', [False, True])
