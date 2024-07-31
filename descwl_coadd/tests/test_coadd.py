@@ -197,7 +197,7 @@ def test_coadd_equality_with_dm_interpolator(buff):
     config.interpLength = buff
     config.badMaskPlanes = our_interpolator.bad_mask_planes
 
-    dm_interpolator = CloughTocher2DInterpolateTask(config=config)
+    # dm_interpolator = CloughTocher2DInterpolateTask(config=config)
 
     # coadd each band separately
     bdata = sim_data['band_data']
