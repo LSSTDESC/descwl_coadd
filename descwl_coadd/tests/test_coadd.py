@@ -228,7 +228,7 @@ def test_coadd_equality_with_dm_interpolator(buff):
             psf_dims=sim_data['psf_dims'],
             rng=rng,
             remove_poisson=False,  # no object poisson noise in sims
-            interpolator=dm_interpolator,
+            interpolator=our_interpolator,
         )
 
         # Compare only the main exposure since the noise realizations are
