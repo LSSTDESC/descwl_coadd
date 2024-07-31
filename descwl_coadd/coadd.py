@@ -601,8 +601,8 @@ def warp_exposures(
 
         if 0 < maskfrac < 1:
             # This modifies the image internally and sets INTRP in mask
-            interpolator.run(expobj)
-            interpolator.run(noise_exp)
+            interpolator.run(expobj.maskedImage)
+            interpolator.run(noise_exp.maskedImage)
 
             # interp_nocheck(exp=expobj, noise_exp=noise_exp, bad_msk=bad_msk)
 
