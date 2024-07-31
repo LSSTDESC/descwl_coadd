@@ -10,7 +10,6 @@ from descwl_shear_sims.stars import StarCatalog
 
 from descwl_coadd.coadd import get_bad_mask, get_median_var, warp_exposures, warp_psf
 from descwl_coadd.coadd import make_coadd_obs, make_coadd, make_coadd_old
-from descwl_coadd.coadd import FLAGS2INTERP
 from descwl_coadd.procflags import WARP_BOUNDARY
 from descwl_coadd.interp import CTInterpolator
 from descwl_shear_sims.galaxies import make_galaxy_catalog
@@ -196,7 +195,7 @@ def test_coadd_equality_with_dm_interpolator(buff):
 
     config = CloughTocher2DInterpolateTask.ConfigClass()
     config.interpLength = buff
-    config.badMaskPlanes = FLAGS2INTERP
+    config.badMaskPlanes = our_interpolator.bad_mask_planes
 
     dm_interpolator = CloughTocher2DInterpolateTask(config=config)
 
@@ -207,7 +206,7 @@ def test_coadd_equality_with_dm_interpolator(buff):
         exps = bdata[band]
 
         # Check that there are pixels to be interpolated.
-        bit_mask = exps[0].mask.getPlaneBitMask(FLAGS2INTERP)
+        bit_mask = exps[0].mask.getPlaneBitMask(our_interpolator.bad_mask_planes)
         assert any((exp.mask.array & bit_mask).any() for exp in exps)
 
         # Since interpolation changes the exposures in place, make a deep
