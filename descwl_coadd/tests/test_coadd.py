@@ -185,6 +185,7 @@ def test_coadd_equality_with_dm_interpolator(buff):
     sim_data = _make_sim(
         rng=rng, psf_type='gauss', bands=bands,
         coadd_dim=coadd_dim, psf_dim=psf_dim,
+        stars=False, bad_columns=True,
     )
 
     our_interpolator = CTInterpolator(buff=buff)
@@ -200,6 +201,10 @@ def test_coadd_equality_with_dm_interpolator(buff):
     for band in bands:
         assert band in bdata
         exps = bdata[band]
+
+        # Check that there are pixels to be interpolated.
+        bit_mask = exps[0].mask.getPlaneBitMask(FLAGS2INTERP)
+        assert any((exp.mask.array & bit_mask).any() for exp in exps)
 
         coadd_data = make_coadd(
             exps=exps,
