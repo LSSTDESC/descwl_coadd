@@ -61,7 +61,6 @@ class OneStarCatalog(object):
         }
 
 
-
 def _make_one_star_sim(
     rng, psf_type='gauss',
     epochs_per_band=3,
