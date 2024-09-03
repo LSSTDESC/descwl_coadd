@@ -53,7 +53,6 @@ class OneStarCatalog(object):
         redshifts = None
         indexes = None
 
-        
         return {
             "objlist": objlist,
             "shifts": shifts,
