@@ -42,7 +42,7 @@ class OneStarCatalog(object):
 
         Returns
         -------
-        [galsim objects], [shifts]
+        [galsim objects], [shifts], [redshifts], [indexes]
         """
 
         flux = survey.get_flux(self.mag)
@@ -51,7 +51,16 @@ class OneStarCatalog(object):
         shifts = [galsim.PositionD(0, 0)]
 
         redshifts = None
-        return objlist, shifts, redshifts
+        indexes = None
+
+        
+        return {
+            "objlist": objlist,
+            "shifts": shifts,
+            "redshifts": redshifts,
+            "indexes": indexes,
+        }
+
 
 
 def _make_one_star_sim(
