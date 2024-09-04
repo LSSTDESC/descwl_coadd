@@ -780,13 +780,15 @@ def verify_warp(exp):
         # give fine grained feedback on what happened
         message = []
         for flagname in tocheck:
-            w = np.where(exp.mask.array & all_flags != 0)
+            flag = exp.mask.getPlaneBitMask(flagname)
+            w = np.where(exp.mask.array & flag != 0)
             if w[0].size > 0:
                 message += [
                     f'{w[0].size} pixels with {flagname}'
                 ]
-            message = ' and '.join(message)
-            raise WarpBoundaryError(message)
+
+        message = ' and '.join(message)
+        raise WarpBoundaryError(message)
 
         if False:
             vis.show_image_and_mask(exp)
