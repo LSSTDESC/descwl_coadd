@@ -782,9 +782,6 @@ def verify_warp(exp):
         for flagname in tocheck:
             flag = exp.mask.getPlaneBitMask(flagname)
             w = np.where(exp.mask.array & flag != 0)
-            print(f"Flagname: {flagname}")
-            print(f"Flag: {flag}")
-            print(f"size: {w[0].size}")
             if w[0].size > 0:
                 message += [
                     f'{w[0].size} pixels with {flagname}'
