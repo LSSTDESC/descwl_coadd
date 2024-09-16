@@ -171,7 +171,9 @@ def test_coadds_with_interpolator_smoke(buff, bad_columns):
 
         assert np.all(np.isfinite(coadd_data['coadd_psf_exp'].image.array))
 
-        if not bad_columns:
+        if bad_columns:
+            assert np.any(coadd_data['coadd_mfrac_exp'].image.array)
+        else:
             assert np.all(coadd_data['coadd_mfrac_exp'].image.array == 0)
 
 
