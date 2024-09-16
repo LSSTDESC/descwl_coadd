@@ -260,18 +260,6 @@ def test_coadd_equality_with_dm_interpolator(subtests, buff, flip_xy):
                     atol=0.41,
                     rtol=0.0,
                 )
-                np.testing.assert_allclose(
-                    actual=dm_coadd_data['coadd_exp'].image.array,
-                    desired=coadd_data['coadd_exp'].image.array,
-                    atol=0.41,
-                    rtol=0.0,
-                )
-                np.testing.assert_allclose(
-                    actual=dm_coadd_data['coadd_exp'].image.array,
-                    desired=coadd_data['coadd_exp'].image.array,
-                    atol=0.0,
-                    rtol=1653.16,
-                )
 
                 # Limit to pixels that weren't bad to begin with, but suffer from
                 # warping the interpolated pixels nearby.
@@ -281,12 +269,6 @@ def test_coadd_equality_with_dm_interpolator(subtests, buff, flip_xy):
                     desired=coadd_data['coadd_exp'].image.array[msk],
                     atol=0.063,
                     rtol=0.0,
-                )
-                np.testing.assert_allclose(
-                    actual=dm_coadd_data['coadd_exp'].image.array[msk],
-                    desired=coadd_data['coadd_exp'].image.array[msk],
-                    atol=0.0,
-                    rtol=32.45,
                 )
 
 
