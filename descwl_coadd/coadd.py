@@ -231,7 +231,7 @@ def make_coadd(
         # the implementation on the actual data. This is necessary to do here
         # because the warp is limited to the coadd bounding box (cell), but the
         # exp maskfrac is computed over the entire detector.
-        _, maskfrac = get_bad_mask(warp, bad_mask_planes=bad_mask_planes)
+        bad_mask, maskfrac = get_bad_mask(warp, bad_mask_planes=bad_mask_planes)
 
         if maskfrac >= max_maskfrac:
             LOG.info("skipping %d maskfrac %f >= %f",
@@ -242,10 +242,17 @@ def make_coadd(
         if this_exp_info['flags'][0] != 0:
             continue
 
+        # The warps within this cell should all have the same variance,
+        # except at bad pixel locations where the variance is set to 0.
+        # Check that all the values are indeed identical.
+        assert (
+            noise_warp.variance.array[~bad_mask].var() < 1e-11
+        ), "Noise warp does not have constant variance"
+
         # Read in the ``medvar`` stored in the variance plane of
         # ``noise_warp`` and restore it to the ``variance`` plane of
         # ``warp``.
-        medvar = noise_warp.variance.array[0, 0]
+        medvar = noise_warp.variance.array[~bad_mask][0]
         noise_warp.variance.array[:, :] = warp.variance.array[:, :]
 
         psf_warp = warp_psf(psf=psf, wcs=wcs, coadd_wcs=coadd_wcs,
