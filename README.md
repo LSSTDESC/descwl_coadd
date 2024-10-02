@@ -1,5 +1,5 @@
 # descwl_coadd
-[![Build Status](https://travis-ci.com/LSSTDESC/descwl_coadd.svg?branch=master)](https://travis-ci.com/LSSTDESC/descwl_coadd)
+[![Build Status](https://github.com/LSSTDESC/descwl_coadd/actions/workflows/test.yaml/badge.svg)](https://github.com/LSSTDESC/descwl_coadd/actions/workflows/test.yaml)
 
 Tools for coadding using the LSST DM software stack
 
