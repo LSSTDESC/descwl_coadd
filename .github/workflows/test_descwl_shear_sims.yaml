@@ -1,0 +1,67 @@
+name: test descwl_shear_sims
+
+on:
+  push:
+    branches:
+      - master
+  pull_request: null
+
+jobs:
+  tests:
+    name: tests
+    strategy:
+      matrix:
+        pyver: ["3.12"]
+
+    runs-on: "ubuntu-latest"
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: conda-incubator/setup-miniconda@v2
+        with:
+          python-version: ${{ matrix.pyver }}
+          channels: conda-forge, defaults
+          channel-priority: strict
+          show-channel-urls: true
+          miniforge-version: latest
+
+      - name: Install special dependencies with conda and pip
+        shell: bash -l {0}
+        run: |
+          conda config --set always_yes yes
+          conda install -q \
+            flake8 \
+            pytest \
+            numpy \
+            "galsim>=2.3" \
+            "numba!=0.54.0" \
+            ngmix \
+            lsstdesc-weaklensingdeblending \
+            fitsio
+
+          pip install --no-deps .
+
+      - name: Install the other package
+        shell: bash -l {0}
+        run: |
+          pushd ..
+          git clone https://github.com/LSSTDESC/descwl-shear-sims.git
+          pushd descwl-shear-sims
+          conda install -q --file requirements.txt
+          pip install --no-deps .
+          popd
+          popd
+
+      - name: Run pytest
+        shell: bash -l {0}
+        run: |
+          pushd ..
+          pushd descwl-shear-sims
+          # Download test data
+          wget https://www.cosmo.bnl.gov/www/esheldon/data/catsim.tar.gz
+          tar xvfz catsim.tar.gz
+          export CATSIM_DIR=$(realpath catsim)
+          pytest -vv --ignore-glob=shear_meas_tests/*
+          popd
+          popd
