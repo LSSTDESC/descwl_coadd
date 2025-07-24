@@ -9,7 +9,7 @@ setupRequired(geom)
 setupRequired(meas_algorithms)
 
 # Optional packages, for testing purposes only.
-setupOptional(descwl_shear_sims)
+# setupOptional(descwl_shear_sims)  # descwl_shear_sims sets this up.
 
 # The following is boilerplate for all packages.
 # See https://dmtn-001.lsst.io for details on LSST_LIBRARY_PATH.
