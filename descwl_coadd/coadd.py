@@ -340,7 +340,6 @@ def make_coadd_old(
                 The fraction of SE images interpolated in each coadd pixel.
     """
 
-    
     if im_precision == "float":
         afw_type = afw_image.ExposureF
     elif im_precision == "double":
@@ -935,8 +934,8 @@ def make_mfrac_exp(*, mfrac_msk, exp, afw_type):
     elif afw_type==afw_image.ExposureD:
         afw_mask_type = afw_image.MaskedImageD
     else:
-        raise TypeError("afw_type must be either afw_image.ExposureF or afw_image.ExposureD")
-        
+        raise TypeError("afw_type must be either afw_image.ExposureF or afw_image.ExposureD")        
+
     ny, nx = mfrac_msk.shape
     mfrac_img = afw_mask_type(width=nx, height=ny)
     assert mfrac_img.image.array.shape == (ny, nx)
