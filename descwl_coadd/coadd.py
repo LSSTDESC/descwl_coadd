@@ -929,9 +929,9 @@ def make_mfrac_exp(*, mfrac_msk, exp, afw_type):
         The masked fraction exposure.
     """
     
-    if afw_type==afw_image.ExposureF:
+    if afw_type == afw_image.ExposureF:
         afw_mask_type = afw_image.MaskedImageF
-    elif afw_type==afw_image.ExposureD:
+    elif afw_type == afw_image.ExposureD:
         afw_mask_type = afw_image.MaskedImageD
     else:
         raise TypeError("afw_type must be either afw_image.ExposureF or afw_image.ExposureD")        
