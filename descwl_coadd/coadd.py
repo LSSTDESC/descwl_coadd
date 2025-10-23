@@ -189,7 +189,8 @@ def make_coadd(
     # separately stack data, noise, and psf
     coadd_exp = make_coadd_exposure(coadd_bbox, coadd_wcs, filter_label, afw_type)
     coadd_noise_exp = make_coadd_exposure(coadd_bbox, coadd_wcs, filter_label, afw_type)
-    coadd_psf_exp = make_coadd_exposure(coadd_psf_bbox, coadd_psf_wcs, filter_label, afw_type)
+    coadd_psf_exp = make_coadd_exposure(coadd_psf_bbox, coadd_psf_wcs,
+                                        filter_label, afw_type)
     coadd_mfrac_exp = make_coadd_exposure(coadd_bbox, coadd_wcs, filter_label, afw_type)
 
     coadd_dims = coadd_exp.image.array.shape
@@ -366,7 +367,8 @@ def make_coadd_old(
     # separately stack data, noise, and psf
     coadd_exp = make_coadd_exposure(coadd_bbox, coadd_wcs, filter_label, afw_type)
     coadd_noise_exp = make_coadd_exposure(coadd_bbox, coadd_wcs, filter_label, afw_type)
-    coadd_psf_exp = make_coadd_exposure(coadd_psf_bbox, coadd_psf_wcs, filter_label, afw_type)
+    coadd_psf_exp = make_coadd_exposure(coadd_psf_bbox, coadd_psf_wcs,
+                                        filter_label, afw_type)
     coadd_mfrac_exp = make_coadd_exposure(coadd_bbox, coadd_wcs, filter_label, afw_type)
 
     coadd_dims = coadd_exp.image.array.shape
@@ -928,13 +930,12 @@ def make_mfrac_exp(*, mfrac_msk, exp, afw_type):
     mfrac_exp : ExposureF
         The masked fraction exposure.
     """
-    
     if afw_type == afw_image.ExposureF:
         afw_mask_type = afw_image.MaskedImageF
     elif afw_type == afw_image.ExposureD:
         afw_mask_type = afw_image.MaskedImageD
     else:
-        raise TypeError("afw_type must be either afw_image.ExposureF or afw_image.ExposureD")        
+        raise TypeError("Wrong afw_type")
 
     ny, nx = mfrac_msk.shape
     mfrac_img = afw_mask_type(width=nx, height=ny)
