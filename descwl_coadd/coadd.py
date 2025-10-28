@@ -842,7 +842,7 @@ def make_coadd_exposure(coadd_bbox, coadd_wcs, filter_label, im_dtype):
     -------
     ExposureF or ExposureD depending on the input im_dtype
     """
-    coadd_exp = afw_image.Exposur(coadd_bbox, coadd_wcs, dtype=im_dtype)
+    coadd_exp = afw_image.Exposure(coadd_bbox, coadd_wcs, dtype=im_dtype)
     coadd_exp.setFilter(filter_label)
 
     # these planes are added by DM, add them here for consistency
