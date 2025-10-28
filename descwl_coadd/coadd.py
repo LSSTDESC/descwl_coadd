@@ -324,7 +324,7 @@ def make_coadd_old(
         this will not be included in the coadd.  Must be in range
         [0, 1]
     im_precision: string
-        Numerical precision for the output image. Options are 
+        Numerical precision for the output image. Options are
         double or float
 
     Returns
