@@ -921,7 +921,7 @@ def _interp_nocheck_old(exp, noise_exp, bad_msk):
     assert not np.any(np.isnan(noise_exp.image.array[bad_msk]))
 
 
-def make_mfrac_exp(*, mfrac_msk, exp, im_dtype):
+def make_mfrac_exp(*, mfrac_msk, exp, im_dtype=np.float32):
     """
     Make the masked fraction exposure.
 
@@ -932,7 +932,8 @@ def make_mfrac_exp(*, mfrac_msk, exp, im_dtype):
     exp : ExposureF
         The coadd exposure for this `mfrac`.
     im_dtype: np.float32 or np.float64
-        Numerical precision of the output masked fraction
+        Numerical precision of the output masked fraction.
+        Defaulted to be np.float32
 
     Returns
     -------
