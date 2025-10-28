@@ -1103,7 +1103,7 @@ def get_median_var(exp, remove_poisson):
     return var
 
 
-def get_noise_exp(exp, rng, remove_poisson, im_dtype):
+def get_noise_exp(exp, rng, remove_poisson, im_dtype=np.float32):
     """
     get a noise image based on the input exposure
 
@@ -1117,7 +1117,7 @@ def get_noise_exp(exp, rng, remove_poisson, im_dtype):
         If True, remove the poisson noise from the variance
         estimate.
     im_dtype: np.float32 or np.float64
-        Numerical precision of the output image
+        Numerical precision of the output image. Defaulted to be np.float32
 
     Returns
     -------
