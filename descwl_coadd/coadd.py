@@ -148,8 +148,8 @@ def make_coadd(
         The warper to use for the masked fraction image. Used only if
         ``is_warps`` is False.
     im_dtype: np.dtype, optional
-        The data type to use for the coadd images.
-        Options are np.float32 and np.float64.
+        The data type to use for the coadd images. Options are np.float32 and np.float64.
+
     Returns
     -------
     coadd_data : dict
