@@ -30,7 +30,7 @@ LOG = logging.getLogger('descwl_coadd.coadd')
 
 def make_coadd_obs(
     exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson, psfs=None,
-    max_maskfrac=MAX_MASKFRAC,
+    max_maskfrac=MAX_MASKFRAC, im_dtype=np.float32,
 ):
     """
     Make a coadd from the input exposures and store in a CoaddObs, which
@@ -59,6 +59,9 @@ def make_coadd_obs(
         Maximum allowed masked fraction.  Images masked more than
         this will not be included in the coadd.  Must be in range
         [0, 1]
+    im_dtype: np.float32 or np.float64, optional
+        Numerical precision for the output images,
+        default is np.float32
 
     Returns
     -------
@@ -93,7 +96,7 @@ def make_coadd(
     exps, coadd_wcs, coadd_bbox, psf_dims, rng, remove_poisson, psfs=None,
     wcss=None, max_maskfrac=MAX_MASKFRAC, bad_mask_planes=FLAGS2INTERP,
     is_warps=False, interpolator=None, warper=None, mfrac_warper=None,
-    im_precision="float",
+    im_dtype=np.float32,
 ):
     """
     make a coadd from the input exposures, working in "online mode",
@@ -144,8 +147,8 @@ def make_coadd(
     mfrac_warper: afw_math.Warper, optional
         The warper to use for the masked fraction image. Used only if
         ``is_warps`` is False.
-    im_precision: str, optional
-        The precision to use for the coadd images. Options are 'float' and 'double'.
+    im_dtype: np.dtype, optional
+        The data type to use for the coadd images. Options are np.float32 and np.float64.
     Returns
     -------
     coadd_data : dict
@@ -163,12 +166,6 @@ def make_coadd(
                 The fraction of SE images interpolated in each coadd pixel.
     """
 
-    if im_precision == "float":
-        im_dtype = np.float32
-    elif im_precision == "double":
-        im_dtype = np.float64
-    else:
-        raise ValueError(f"Invalid im_precision: {im_precision}")
 
     check_max_maskfrac(max_maskfrac)
 
