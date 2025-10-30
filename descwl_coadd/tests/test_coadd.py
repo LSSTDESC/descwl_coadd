@@ -706,6 +706,7 @@ def test_coadds_bad_max_maskfrac(max_maskfrac):
             max_maskfrac=max_maskfrac,
         )
 
+
 @pytest.mark.parametrize('im_dtype', [np.float32, np.float64])
 def test_coadds_dtype(im_dtype):
     rng = np.random.RandomState(55)
@@ -721,7 +722,8 @@ def test_coadds_dtype(im_dtype):
     )
 
     exps = sim_data['band_data']['i']
-    assert all(exp.image.array.dtype == im_dtype for exp in exps), "Input exposure dtype mismatch"
+    assert all(exp.image.array.dtype == im_dtype for exp in exps
+               ), "Input exposure dtype mismatch"
 
     coadd_data = make_coadd(
         exps=exps,
@@ -736,7 +738,10 @@ def test_coadds_dtype(im_dtype):
     for tp in ['exp', 'noise_exp', 'mfrac_exp', 'psf_exp']:
         name = f'coadd_{tp}'
         coadd_exp = coadd_data[name]
-        assert coadd_exp.image.array.dtype == im_dtype, f'{tp} dtype mismatch, expected {im_dtype}, got {coadd_exp.image.array.dtype}'
+        assert coadd_exp.image.array.dtype == im_dtype, (
+            f'{tp} dtype mismatch, expected {im_dtype}',
+            f'got {coadd_exp.image.array.dtype}')
+
 
 if __name__ == '__main__':
     test_coadds_mfrac(dither=True, rotate=True)
