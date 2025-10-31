@@ -34,6 +34,7 @@ def _make_sim(
     se_dim=None,
     psf_dim=51,
     bad_columns=False,
+    im_dtype=np.float32,
 ):
     buff = 5
 
@@ -79,6 +80,7 @@ def _make_sim(
         dither=dither,
         rotate=rotate,
         bad_columns=bad_columns,
+        im_dtype=im_dtype,
     )
 
 
@@ -703,6 +705,42 @@ def test_coadds_bad_max_maskfrac(max_maskfrac):
             remove_poisson=False,  # no object poisson noise in sims
             max_maskfrac=max_maskfrac,
         )
+
+
+@pytest.mark.parametrize('im_dtype', [np.float32, np.float64])
+def test_coadds_dtype(im_dtype):
+    rng = np.random.RandomState(55)
+
+    coadd_dim = 101
+    psf_dim = 51
+
+    bands = ['i']
+    sim_data = _make_sim(
+        rng=rng, psf_type='gauss', bands=bands,
+        coadd_dim=coadd_dim, psf_dim=psf_dim,
+        im_dtype=im_dtype,
+    )
+
+    exps = sim_data['band_data']['i']
+    assert all(exp.image.array.dtype == im_dtype for exp in exps
+               ), "Input exposure dtype mismatch"
+
+    coadd_data = make_coadd(
+        exps=exps,
+        coadd_wcs=sim_data['coadd_wcs'],
+        coadd_bbox=sim_data['coadd_bbox'],
+        psf_dims=sim_data['psf_dims'],
+        rng=rng,
+        remove_poisson=False,
+        im_dtype=im_dtype,
+    )
+
+    for tp in ['exp', 'noise_exp', 'mfrac_exp', 'psf_exp']:
+        name = f'coadd_{tp}'
+        coadd_exp = coadd_data[name]
+        assert coadd_exp.image.array.dtype == im_dtype, (
+            f'{tp} dtype mismatch, expected {im_dtype}',
+            f'got {coadd_exp.image.array.dtype}')
 
 
 if __name__ == '__main__':
