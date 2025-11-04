@@ -1355,3 +1355,92 @@ def get_pbar(exps, nmin=5):
         return PBar(exps)
     else:
         return exps
+
+
+def get_coadd_psf_at_position(
+    exps,
+    coadd_wcs,
+    coadd_bbox,
+    psf_dims,
+    xy=None,
+    *,
+    skypos=None,
+    rng=None,
+    remove_poisson=False,
+    psfs=None,
+    wcss=None,
+    max_maskfrac=MAX_MASKFRAC,
+    bad_mask_planes=FLAGS2INTERP,
+    warper=None,
+    afw_type=None,
+):
+    """
+    Build the coadd PSF evaluated at a position in the coadd image.
+    """
+    check_psf_dims(psf_dims)
+
+    if skypos is None:
+        if xy is None:
+            raise ValueError("Provide either xy=(x,y) in coadd pixels or skypos=SpherePoint.")
+        if not isinstance(xy, geom.Point2D):
+            xy = geom.Point2D(*xy)
+        skypos = coadd_wcs.pixelToSky(xy)
+
+    cen_int = geom.Point2I(int(np.floor(coadd_wcs.skyToPixel(skypos).x + 0.5)),
+                           int(np.floor(coadd_wcs.skyToPixel(skypos).y + 0.5)))
+    coadd_psf_bbox = get_coadd_psf_bbox(cen=cen_int, dim=psf_dims[0])
+    print(f"coadd psf bbox: {coadd_psf_bbox}")
+
+    # coadd_psf_bbox = geom.Box2D(geom.Point2D(60.5, 50), geom.Extent2D(51, 51))
+    # print(f"forcing coadd bbox to {coadd_psf_bbox}")
+
+    filter_label = exps[0].getFilter()
+    coadd_psf_exp = make_coadd_exposure(coadd_psf_bbox, coadd_wcs, filter_label)
+    psf_stacker = make_stacker(coadd_dims=psf_dims)
+
+    if psfs is None:
+        psfs = (exp.getPsf() for exp in exps)
+    if wcss is None:
+        wcss = (exp.getWcs() for exp in exps)
+    if warper is None:
+        warper = _get_default_image_warper()
+
+    if rng is None:
+        rng = np.random.RandomState(5)
+
+    for exp, psf, wcs in zip(exps, psfs, wcss):
+        bad_msk, maskfrac = get_bad_mask(exp, bad_mask_planes=bad_mask_planes)
+        if maskfrac >= max_maskfrac:
+            continue
+
+        noise_exp, medvar = get_noise_exp(exp=exp, rng=rng, remove_poisson=remove_poisson, afw_type=afw_type)
+        weight = 1.0 / medvar
+
+        psf_exp = get_psf_exp_new(
+            psf=psf,
+            wcs=wcs,
+            coadd_cen_skypos=skypos,
+            var=medvar,
+            filter_label=filter_label,
+        )
+
+        (psf_warp,) = _get_warps_for_exp(
+            [psf_exp], [coadd_wcs], [coadd_psf_bbox], [warper], [False]
+        )
+        
+        import matplotlib.pyplot as plt
+        plt.imshow(psf_warp.image.array, origin='lower')
+        plt.show()
+
+        psf_stacker.add_masked_image(psf_warp, weight=weight)
+
+    psf_stacker.fill_stacked_masked_image(coadd_psf_exp.maskedImage)
+    plt.imshow(coadd_psf_exp.image.array, origin='lower')
+    plt.title('coadd psf before extract')
+    plt.show()
+    print(f"xy = {xy}")
+    plt.imshow(extract_coadd_psf(coadd_psf_exp).computeKernelImage(geom.Point2D(*xy)).array, origin='lower')
+    plt.title('final coadd psf')
+    plt.show()
+    return extract_coadd_psf(coadd_psf_exp)
+
