@@ -1372,7 +1372,7 @@ def get_coadd_psf_at_position(
     max_maskfrac=MAX_MASKFRAC,
     bad_mask_planes=FLAGS2INTERP,
     warper=None,
-    im_dtype=None,
+    im_dtype=np.float32,
 ):
     """
     Build the *coadd PSF* evaluated at a specified position in the coadd image.
@@ -1449,7 +1449,7 @@ def get_coadd_psf_at_position(
 
     filter_label = exps[0].getFilter()
     coadd_psf_exp = make_coadd_exposure(coadd_psf_bbox, coadd_wcs,
-                                        filter_label)
+                                        filter_label, im_dtype)
     psf_stacker = make_stacker(coadd_dims=psf_dims)
 
     if psfs is None:

@@ -743,6 +743,8 @@ def test_coadds_dtype(im_dtype):
             f'got {coadd_exp.image.array.dtype}')
 
 
+
+
 if __name__ == '__main__':
     test_coadds_mfrac(dither=True, rotate=True)
     # test_coadds_boundary(rotate=True)

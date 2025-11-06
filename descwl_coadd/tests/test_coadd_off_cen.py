@@ -7,8 +7,8 @@ from descwl_shear_sims.sim import make_sim, get_se_dim, get_coadd_center_gs_pos
 from descwl_shear_sims.psfs import make_fixed_psf, make_ps_psf
 from descwl_shear_sims.stars import StarCatalog
 from descwl_shear_sims.galaxies import make_galaxy_catalog
-
-from descwl_coadd.coadd import make_coadd, get_coadd_psf_at_position, get_coadd_psf_bbox
+from descwl_coadd.coadd import make_coadd, get_coadd_psf_at_position
+from descwl_coadd.coadd import get_coadd_psf_bbox
 import lsst.geom as geom
 import galsim
 import pytest
@@ -194,6 +194,6 @@ def test_coadd_off_cen(u_shift):
         # check if the center psf from the old method
         # and new method are the same
         np.testing.assert_allclose(off_img, cen_psf_img, atol=1e-6)
-    
+
     # check if the off_center psf agree with the input delta object
     np.testing.assert_allclose(off_img, crop_image_norm, atol=1e-6)
