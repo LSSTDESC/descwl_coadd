@@ -1,6 +1,4 @@
 import sys
-import os
-import esutil as eu
 import numpy as np
 
 from descwl_shear_sims.sim import make_sim, get_se_dim, get_coadd_center_gs_pos
