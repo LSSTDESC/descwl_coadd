@@ -1362,9 +1362,9 @@ def get_coadd_psf_at_position(
     coadd_wcs,
     coadd_bbox,
     psf_dims,
-    xy=None,
     *,
-    skypos=None,
+    image_pos=None,
+    world_pos=None,
     rng=None,
     remove_poisson=False,
     psfs=None,
@@ -1395,11 +1395,10 @@ def get_coadd_psf_at_position(
         Bounding box (in coadd pixels) of the coadd cell/region.
     psf_dims : tuple[int, int]
         Desired PSF stamp dimensions (must be square and odd).
-    xy : tuple[float, float] or `lsst.geom.Point2D`, optional
-        Coadd pixel coordinates (x, y) at which to evaluate the PSF. If not
-        provided, you must pass ``skypos``.
-    skypos : `lsst.geom.SpherePoint`, optional
-        Sky position at which to evaluate the PSF. If provided, ``xy`` is ignored.
+    image_pos : tuple[float, float] or `lsst.geom.Point2D`, optional
+        Coadd pixel coordinates (x, y) at which to evaluate the PSF.
+    world_pos : `lsst.geom.SpherePoint`, optional
+        Sky position at which to evaluate the PSF.
     rng : `numpy.random.RandomState`, optional
         RNG used for generating per-exposure noise realizations when estimating
         median variance via ``get_noise_exp``. If ``None``, an internal default
@@ -1434,16 +1433,16 @@ def get_coadd_psf_at_position(
     check_max_maskfrac(max_maskfrac)
     check_psf_dims(psf_dims)
 
-    if skypos is None:
-        if xy is None:
-            raise ValueError("Provide either xy=(x,y)," +
-                             " in coadd pixels or skypos=SpherePoint.")
-        if not isinstance(xy, geom.Point2D):
-            xy = geom.Point2D(*xy)
-        skypos = coadd_wcs.pixelToSky(xy)
+    if (image_pos is None) == (world_pos is None):
+        raise ValueError("You must provide exactly one of 'image_pos' or 'world_pos'.")
 
-    cen_int = geom.Point2I(int(np.floor(coadd_wcs.skyToPixel(skypos).x + 0.5)),
-                           int(np.floor(coadd_wcs.skyToPixel(skypos).y + 0.5)))
+    if world_pos is None:
+        if not isinstance(image_pos, geom.Point2D):
+            image_pos = geom.Point2D(*image_pos)
+        world_pos = coadd_wcs.pixelToSky(image_pos)
+
+    cen_int = geom.Point2I(int(np.floor(coadd_wcs.skyToPixel(world_pos).x + 0.5)),
+                           int(np.floor(coadd_wcs.skyToPixel(world_pos).y + 0.5)))
     coadd_psf_bbox = get_coadd_psf_bbox(cen=cen_int, dim=psf_dims[0])
     print(f"coadd psf bbox: {coadd_psf_bbox}")
 
@@ -1475,9 +1474,10 @@ def get_coadd_psf_at_position(
         psf_exp = get_psf_exp_new(
             psf=psf,
             wcs=wcs,
-            coadd_cen_skypos=skypos,
+            coadd_cen_skypos=world_pos,
             var=medvar,
             filter_label=filter_label,
+            im_dtype=im_dtype,
         )
 
         (psf_warp,) = _get_warps_for_exp(
