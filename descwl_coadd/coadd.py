@@ -1484,10 +1484,6 @@ def get_coadd_psf_at_position(
             [psf_exp], [coadd_wcs], [coadd_psf_bbox], [warper], [False]
         )
 
-        import matplotlib.pyplot as plt
-        plt.imshow(psf_warp.image.array, origin='lower')
-        plt.show()
-
         psf_stacker.add_masked_image(psf_warp, weight=weight)
 
     psf_stacker.fill_stacked_masked_image(coadd_psf_exp.maskedImage)
