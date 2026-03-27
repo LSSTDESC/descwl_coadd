@@ -192,19 +192,19 @@ def get_coadd_res(u_shift, v_shift):
                                     geom.degrees)
     new_image_pos = coadd_wcs.skyToPixel(dm_world_pos)
 
-    xy = geom.Point2D(new_image_pos.x, new_image_pos.y)
+    dm_image_pos = geom.Point2D(new_image_pos.x, new_image_pos.y)
 
     psf_off = get_coadd_psf_at_position(
         exps=exps,
         coadd_wcs=coadd_wcs,
         coadd_bbox=coadd_bbox,
         psf_dims=psf_dims,
-        xy=xy,
+        image_pos=dm_image_pos,
         rng=np.random.RandomState(13),
         remove_poisson=False,
     )
 
-    off_img = psf_off.computeKernelImage(xy).array
+    off_img = psf_off.computeKernelImage(dm_image_pos).array
     assert off_img.shape == (psf_dim, psf_dim)
     assert np.isfinite(off_img).all()
     np.testing.assert_allclose(off_img.sum(), 1.0, rtol=1e-6, atol=1e-8)
