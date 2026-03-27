@@ -5,6 +5,7 @@ from descwl_shear_sims.sim import make_sim, get_se_dim, get_coadd_center_gs_pos
 from descwl_shear_sims.psfs import make_fixed_psf, make_ps_psf
 from descwl_shear_sims.stars import StarCatalog
 from descwl_shear_sims.galaxies import make_galaxy_catalog
+from descwl_shear_sims.layout import Layout
 from descwl_coadd.coadd import make_coadd, get_coadd_psf_at_position
 from descwl_coadd.coadd import get_coadd_psf_bbox
 import lsst.geom as geom
@@ -16,6 +17,57 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
 psf_dim = 51
 coadd_dim = 101
+pixel_scale = 0.2
+
+
+class CustomGalaxyCatalog(object):
+    """
+    Catalog that uses an explicit list of galsim objects and (u, v) shifts.
+
+    Parameters
+    ----------
+    gal_list : list[galsim.GSObject]
+        The galaxies to place.
+    uv_shift : list[tuple[float, float]]
+        Per-galaxy (u, v) shifts in arcsec, same length as gal_list.
+    layout : Layout | None
+        Optional; only used to carry coadd bbox/world origin metadata.
+        Positions are taken strictly from `uv_shift`.
+    """
+    def __init__(self, *, gal_list, uv_shift, coadd_dim, pixel_scale,
+                 simple_coadd_bbox, layout=None):
+        if gal_list is None or len(gal_list) == 0:
+            raise ValueError("gal_list must be a non-empty list of galsim objects")
+        if uv_shift is None or len(uv_shift) != len(gal_list):
+            raise ValueError("uv_shift must be provided and match len(gal_list)")
+        self.gal_type = 'fixed'
+        self._gal_list = list(gal_list)
+        self._shifts = [galsim.PositionD(u, v) for (u, v) in uv_shift]
+
+        buff = 0  # ignored since positions are explicit
+
+        if isinstance(layout, str):
+            self.layout = Layout(layout, coadd_dim, buff, pixel_scale,
+                                 simple_coadd_bbox=simple_coadd_bbox)
+        else:
+            assert isinstance(layout, Layout)
+            self.layout = layout
+
+    def __len__(self):
+        return len(self._gal_list)
+
+    def get_objlist(self, *, survey):
+        """
+        Returns a dict with the same structure as other catalogs.
+        The provided GSObjects are used verbatim (no flux remapping).
+        """
+        indexes = list(range(len(self._gal_list)))
+        return {
+            "objlist": list(self._gal_list),
+            "shifts": list(self._shifts),
+            "redshifts": None,
+            "indexes": indexes,
+        }
 
 
 def _make_sim(
@@ -32,19 +84,18 @@ def _make_sim(
     bad_columns=False,
     psf_variation_factor=None,
     u_shift=0,
+    v_shift=0,
 ):
     buff = 5
 
     gal = galsim.DeltaFunction(flux=1.0)
-    galaxy_catalog = make_galaxy_catalog(
-        rng=rng,
-        coadd_dim=coadd_dim,
-        buff=buff,
-        layout="custom",
-        gal_type="custom",
+    galaxy_catalog = CustomGalaxyCatalog(
         gal_list=[gal],
-        uv_shift=[(u_shift, 0.0)],
+        uv_shift=[(u_shift, v_shift)],
+        coadd_dim=coadd_dim,
+        pixel_scale=pixel_scale,
         simple_coadd_bbox=True,
+        layout="no_layout",
     )
 
     if se_dim is None:
@@ -85,7 +136,7 @@ def _make_sim(
     )
 
 
-def get_coadd_res(u_shift):
+def get_coadd_res(u_shift, v_shift):
     rng = np.random.RandomState(2025)
     bands = ['i']
 
@@ -98,6 +149,7 @@ def get_coadd_res(u_shift):
         dither=False,
         rotate=False,
         u_shift=u_shift,
+        v_shift=v_shift,
     )
 
     exps = sim_data['band_data']['i']
@@ -132,7 +184,7 @@ def get_coadd_res(u_shift):
 
     world_pos = coadd_bbox_cen_gs_skypos.deproject(
         u_shift * galsim.arcsec,
-        0. * galsim.arcsec,
+        v_shift * galsim.arcsec,
     )
 
     dm_world_pos = geom.SpherePoint(world_pos.ra / galsim.degrees,
@@ -160,26 +212,38 @@ def get_coadd_res(u_shift):
     return sim_data, coadd_dict, cen_psf_img, off_img, exps
 
 
-def get_crop_bbox(u_shift, coadd_dim, psf_dim, pixel_scale):
+def get_crop_bbox(u_shift, v_shift, coadd_dim, psf_dim, pixel_scale):
     coadd_cen = (coadd_dim - 1) / 2
 
-    pixel_shift = u_shift / pixel_scale
-
     cen_int = geom.Point2I(
-        int(np.floor(coadd_cen + pixel_shift + 0.5)),
-        int(np.floor(coadd_cen + 0.5)))
+        int(np.floor(coadd_cen + u_shift / pixel_scale + 0.5)),
+        int(np.floor(coadd_cen + v_shift / pixel_scale + 0.5)))
 
     to_crop = get_coadd_psf_bbox(cen_int, psf_dim)
 
     return to_crop
 
 
-@pytest.mark.parametrize("u_shift", [0.0, 10.0 * 0.2, 10.5 * 0.2])
-def test_coadd_off_cen(u_shift):
-    sim_data, coadd_dict, cen_psf_img, off_img, exps = get_coadd_res(u_shift)
+np.random.seed(42)
+random_shifts = [
+    (np.random.uniform(-2.0, 2.0), np.random.uniform(-2.0, 2.0)) 
+    for _ in range(3)
+]
+
+test_cases = [
+    (0.0, 0.0),
+    (10.0 * 0.2, 0.0),
+    (10.5 * 0.2, 5.0 * 0.2)
+] + random_shifts
+
+
+@pytest.mark.parametrize("u_shift, v_shift", test_cases)
+def test_coadd_off_cen(u_shift, v_shift):
+    sim_data, coadd_dict, cen_psf_img, off_img, exps = get_coadd_res(u_shift, v_shift)
 
     crop_box = get_crop_bbox(
         u_shift=u_shift,
+        v_shift=v_shift,
         coadd_dim=coadd_dim,
         psf_dim=psf_dim,
         pixel_scale=sim_data['coadd_wcs'].getPixelScale().asArcseconds(),
@@ -188,7 +252,7 @@ def test_coadd_off_cen(u_shift):
     crop_image = coadd_dict["coadd_exp"][crop_box].image.array
     crop_image_norm = crop_image / crop_image.sum()
 
-    if u_shift == 0.0:
+    if u_shift == 0.0 and v_shift == 0.0:
         # check if the center psf from the old method
         # and new method are the same
         np.testing.assert_allclose(off_img, cen_psf_img, atol=1e-6)
