@@ -1379,7 +1379,7 @@ def get_coadd_psf_at_position(
 
     The function reconstructs the effective PSF at a given coadd location by:
       (1) evaluating each SE (single-epoch) PSF at the sky position corresponding
-          to the requested coadd pixel,
+          to the requested coadd pixel location,
       (2) warping each SE PSF image into the coadd WCS/bounding box, and
       (3) stacking the warped PSFs with inverse-variance weights (1/medvar),
           skipping inputs whose masked-pixel fraction exceeds ``max_maskfrac``.
