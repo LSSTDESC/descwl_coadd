@@ -53,7 +53,7 @@ jobs:
         shell: bash -l {0}
         run: |
           conda config --set always_yes yes
-          conda install -q \
+          mamba install -q \
             flake8 \
             pytest \
             numpy \
@@ -71,7 +71,7 @@ jobs:
           pushd ..
           git clone https://github.com/LSSTDESC/descwl-shear-sims.git
           pushd descwl-shear-sims
-          conda install -q --file requirements.txt
+          mamba install -q --file requirements.txt
           pip install --no-deps .
           popd
           popd
