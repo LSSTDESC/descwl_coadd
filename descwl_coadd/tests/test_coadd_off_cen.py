@@ -4,7 +4,6 @@ import numpy as np
 from descwl_shear_sims.sim import make_sim, get_se_dim, get_coadd_center_gs_pos
 from descwl_shear_sims.psfs import make_fixed_psf, make_ps_psf
 from descwl_shear_sims.stars import StarCatalog
-from descwl_shear_sims.galaxies import make_galaxy_catalog
 from descwl_shear_sims.layout import Layout
 from descwl_coadd.coadd import make_coadd, get_coadd_psf_at_position
 from descwl_coadd.coadd import get_coadd_psf_bbox
@@ -226,7 +225,7 @@ def get_crop_bbox(u_shift, v_shift, coadd_dim, psf_dim, pixel_scale):
 
 np.random.seed(42)
 random_shifts = [
-    (np.random.uniform(-2.0, 2.0), np.random.uniform(-2.0, 2.0)) 
+    (np.random.uniform(-2.0, 2.0), np.random.uniform(-2.0, 2.0))
     for _ in range(3)
 ]
 
