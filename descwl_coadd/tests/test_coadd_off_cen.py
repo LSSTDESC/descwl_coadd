@@ -135,7 +135,7 @@ def _make_sim(
     )
 
 
-def get_coadd_res(u_shift, v_shift):
+def get_coadd_res(u_shift, v_shift, dither=False, rotate=False):
     rng = np.random.RandomState(2025)
     bands = ['i']
 
@@ -145,8 +145,8 @@ def get_coadd_res(u_shift, v_shift):
         bands=bands,
         coadd_dim=coadd_dim,
         psf_dim=psf_dim,
-        dither=False,
-        rotate=False,
+        dither=dither,
+        rotate=rotate,
         u_shift=u_shift,
         v_shift=v_shift,
     )
@@ -229,16 +229,31 @@ random_shifts = [
     for _ in range(3)
 ]
 
-test_cases = [
+shift_cases = [
     (0.0, 0.0),
     (10.0 * 0.2, 0.0),
     (10.5 * 0.2, 5.0 * 0.2)
 ] + random_shifts
 
+dither_rotate_cases = [
+    (False, False),
+    (True, False),
+    (False, True),
+    (True, True),
+]
 
-@pytest.mark.parametrize("u_shift, v_shift", test_cases)
-def test_coadd_off_cen(u_shift, v_shift):
-    sim_data, coadd_dict, cen_psf_img, off_img, exps = get_coadd_res(u_shift, v_shift)
+test_cases = [
+    (u, v, dither, rotate)
+    for (u, v) in shift_cases
+    for (dither, rotate) in dither_rotate_cases
+]
+
+
+@pytest.mark.parametrize("u_shift, v_shift, dither, rotate", test_cases)
+def test_coadd_off_cen(u_shift, v_shift, dither, rotate):
+    sim_data, coadd_dict, cen_psf_img, off_img, exps = get_coadd_res(
+        u_shift, v_shift, dither=dither, rotate=rotate
+    )
 
     crop_box = get_crop_bbox(
         u_shift=u_shift,
