@@ -1355,3 +1355,136 @@ def get_pbar(exps, nmin=5):
         return PBar(exps)
     else:
         return exps
+
+
+def get_coadd_psf_at_position(
+    exps,
+    coadd_wcs,
+    coadd_bbox,
+    psf_dims,
+    *,
+    image_pos=None,
+    world_pos=None,
+    rng=None,
+    remove_poisson=False,
+    psfs=None,
+    wcss=None,
+    max_maskfrac=MAX_MASKFRAC,
+    bad_mask_planes=FLAGS2INTERP,
+    warper=None,
+    im_dtype=np.float32,
+):
+    """
+    Build the *coadd PSF* evaluated at a specified position in the coadd image.
+
+    The function reconstructs the effective PSF at a given coadd location by:
+      (1) evaluating each SE (single-epoch) PSF at the sky position corresponding
+          to the requested coadd pixel location,
+      (2) warping each SE PSF image into the coadd WCS/bounding box, and
+      (3) stacking the warped PSFs with inverse-variance weights (1/medvar),
+          skipping inputs whose masked-pixel fraction exceeds ``max_maskfrac``.
+    The stacked PSF image is then normalized and returned as a ``KernelPsf``.
+
+    Parameters
+    ----------
+    exps : sequence of `lsst.afw.image.ExposureF` or `ExposureD`
+        Single-epoch exposures contributing to the coadd.
+    coadd_wcs : `lsst.afw.geom.SkyWcs`
+        WCS of the target coadd.
+    coadd_bbox : `lsst.geom.Box2I`
+        Bounding box (in coadd pixels) of the coadd cell/region.
+    psf_dims : tuple[int, int]
+        Desired PSF stamp dimensions (must be square and odd).
+    image_pos : tuple[float, float] or `lsst.geom.Point2D`, optional
+        Coadd pixel coordinates (x, y) at which to evaluate the PSF.
+    world_pos : `lsst.geom.SpherePoint`, optional
+        Sky position at which to evaluate the PSF.
+    rng : `numpy.random.RandomState`, optional
+        RNG used for generating per-exposure noise realizations when estimating
+        median variance via ``get_noise_exp``. If ``None``, an internal default
+        is used.
+    remove_poisson : bool, optional
+        If True, subtract Poisson contribution from the variance estimate
+        when computing weights. Default is False.
+    psfs : iterable of `lsst.afw.detection.Psf`, optional
+        SE PSF objects corresponding to ``exps``. If None, obtained from
+        each exposure via ``exp.getPsf()``.
+    wcss : iterable of `lsst.afw.geom.SkyWcs`, optional
+        SE WCS objects corresponding to ``exps``. If None, obtained via
+        ``exp.getWcs()``.
+    max_maskfrac : float, optional
+        Maximum allowed masked-pixel fraction for an SE image. Inputs with
+        masked fraction ≥ ``max_maskfrac`` are excluded. Must be in [0, 1].
+    bad_mask_planes : list[str], optional
+        Mask plane names considered “bad” when computing the masked fraction.
+    warper : `lsst.afw.math.Warper`, optional
+        Warper used to map SE PSFs into the coadd WCS. If None, a default warper
+        with kernel ``DEFAULT_INTERP`` is created.
+    im_dtype : `numpy.dtype`, optional
+        Floating precision for intermediate images (e.g., `np.float32`, `np.float64`).
+        If None, falls back to package defaults where applicable.
+
+    Returns
+    -------
+    psf : `lsst.meas.algorithms.KernelPsf`
+        The coadd PSF evaluated at the requested position.
+    """
+
+    check_max_maskfrac(max_maskfrac)
+    check_psf_dims(psf_dims)
+
+    if (image_pos is None) == (world_pos is None):
+        raise ValueError("You must provide exactly one of 'image_pos' or 'world_pos'.")
+
+    if world_pos is None:
+        if not isinstance(image_pos, geom.Point2D):
+            image_pos = geom.Point2D(*image_pos)
+        world_pos = coadd_wcs.pixelToSky(image_pos)
+
+    cen_int = geom.Point2I(int(np.floor(coadd_wcs.skyToPixel(world_pos).x + 0.5)),
+                           int(np.floor(coadd_wcs.skyToPixel(world_pos).y + 0.5)))
+    coadd_psf_bbox = get_coadd_psf_bbox(cen=cen_int, dim=psf_dims[0])
+    print(f"coadd psf bbox: {coadd_psf_bbox}")
+
+    filter_label = exps[0].getFilter()
+    coadd_psf_exp = make_coadd_exposure(coadd_psf_bbox, coadd_wcs,
+                                        filter_label, im_dtype)
+    psf_stacker = make_stacker(coadd_dims=psf_dims)
+
+    if psfs is None:
+        psfs = (exp.getPsf() for exp in exps)
+    if wcss is None:
+        wcss = (exp.getWcs() for exp in exps)
+    if warper is None:
+        warper = _get_default_image_warper()
+
+    if rng is None:
+        rng = np.random.RandomState(5)
+
+    for exp, psf, wcs in zip(exps, psfs, wcss):
+        bad_msk, maskfrac = get_bad_mask(exp, bad_mask_planes=bad_mask_planes)
+        if maskfrac >= max_maskfrac:
+            continue
+
+        noise_exp, medvar = get_noise_exp(exp=exp, rng=rng,
+                                          remove_poisson=remove_poisson,
+                                          im_dtype=im_dtype)
+        weight = 1.0 / medvar
+
+        psf_exp = get_psf_exp_new(
+            psf=psf,
+            wcs=wcs,
+            coadd_cen_skypos=world_pos,
+            var=medvar,
+            filter_label=filter_label,
+            im_dtype=im_dtype,
+        )
+
+        (psf_warp,) = _get_warps_for_exp(
+            [psf_exp], [coadd_wcs], [coadd_psf_bbox], [warper], [False]
+        )
+
+        psf_stacker.add_masked_image(psf_warp, weight=weight)
+
+    psf_stacker.fill_stacked_masked_image(coadd_psf_exp.maskedImage)
+    return extract_coadd_psf(coadd_psf_exp)
