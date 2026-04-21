@@ -280,7 +280,12 @@ def test_center_psf_make_coadd_vs_at_position(dither, rotate):
     coadd_cen = coadd_bbox.getCenter()
     center_pos = geom.Point2D(coadd_cen.x, coadd_cen.y)
 
-    make_coadd_psf_img = coadd_dict['coadd_exp'].getPsf().computeKernelImage(center_pos).array
+    make_coadd_psf_img = (
+        coadd_dict['coadd_exp']
+        .getPsf()
+        .computeKernelImage(center_pos)
+        .array
+    )
 
     at_pos_psf = get_coadd_psf_at_position(
         exps=exps,
