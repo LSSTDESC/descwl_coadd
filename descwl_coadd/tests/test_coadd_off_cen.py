@@ -249,6 +249,58 @@ test_cases = [
 ]
 
 
+@pytest.mark.parametrize("dither, rotate", dither_rotate_cases)
+def test_center_psf_make_coadd_vs_at_position(dither, rotate):
+    rng = np.random.RandomState(2025)
+
+    sim_data = _make_sim(
+        rng=rng,
+        psf_type='gauss',
+        bands=['i'],
+        coadd_dim=coadd_dim,
+        psf_dim=psf_dim,
+        dither=dither,
+        rotate=rotate,
+    )
+
+    exps = sim_data['band_data']['i']
+    coadd_wcs = sim_data['coadd_wcs']
+    coadd_bbox = sim_data['coadd_bbox']
+    psf_dims = sim_data['psf_dims']
+
+    coadd_dict = make_coadd(
+        exps=exps,
+        coadd_wcs=coadd_wcs,
+        coadd_bbox=coadd_bbox,
+        psf_dims=psf_dims,
+        rng=np.random.RandomState(7),
+        remove_poisson=False,
+    )
+
+    coadd_cen = coadd_bbox.getCenter()
+    center_pos = geom.Point2D(coadd_cen.x, coadd_cen.y)
+
+    make_coadd_psf_img = (
+        coadd_dict['coadd_exp']
+        .getPsf()
+        .computeKernelImage(center_pos)
+        .array
+    )
+
+    at_pos_psf = get_coadd_psf_at_position(
+        exps=exps,
+        coadd_wcs=coadd_wcs,
+        coadd_bbox=coadd_bbox,
+        psf_dims=psf_dims,
+        image_pos=center_pos,
+        rng=np.random.RandomState(13),
+        remove_poisson=False,
+    )
+    at_pos_psf_img = at_pos_psf.computeKernelImage(center_pos).array
+
+    np.testing.assert_allclose(at_pos_psf_img, make_coadd_psf_img, atol=1e-15)
+
+
 @pytest.mark.parametrize("u_shift, v_shift, dither, rotate", test_cases)
 def test_coadd_off_cen(u_shift, v_shift, dither, rotate):
     sim_data, coadd_dict, cen_psf_img, off_img, exps = get_coadd_res(
