@@ -223,6 +223,21 @@ def get_crop_bbox(u_shift, v_shift, coadd_dim, psf_dim, pixel_scale):
     return to_crop
 
 
+def _report_diff(img, ref, *, u_shift=0.0, v_shift=0.0, dither, rotate,
+                 psf_variation_factor=None):
+    """Print the max abs difference between two images in a common format
+    shared by all tests in this file."""
+    max_abs_diff = np.abs(img - ref).max()
+    frac_of_peak = max_abs_diff / ref.max()
+    print(
+        f"shift=({u_shift:+.3f}, {v_shift:+.3f}) "
+        f"dither={dither} rotate={rotate} var={psf_variation_factor}: "
+        f"max|diff|={max_abs_diff:.3e} "
+        f"({frac_of_peak:.2%} of peak)"
+    )
+    return max_abs_diff, frac_of_peak
+
+
 np.random.seed(42)
 random_shifts = [
     (np.random.uniform(-2.0, 2.0), np.random.uniform(-2.0, 2.0))
@@ -298,6 +313,10 @@ def test_center_psf_make_coadd_vs_at_position(dither, rotate):
     )
     at_pos_psf_img = at_pos_psf.computeKernelImage(center_pos).array
 
+    _report_diff(
+        at_pos_psf_img, make_coadd_psf_img, dither=dither, rotate=rotate,
+    )
+
     np.testing.assert_allclose(at_pos_psf_img, make_coadd_psf_img, atol=1e-15)
 
 
@@ -318,6 +337,11 @@ def test_coadd_off_cen(u_shift, v_shift, dither, rotate):
     crop_image = coadd_dict["coadd_exp"][crop_box].image.array
     crop_image_norm = crop_image / crop_image.sum()
 
+    _report_diff(
+        off_img, crop_image_norm, u_shift=u_shift, v_shift=v_shift,
+        dither=dither, rotate=rotate,
+    )
+
     if u_shift == 0.0 and v_shift == 0.0:
         # check if the center psf from the old method
         # and new method are the same
@@ -325,3 +349,124 @@ def test_coadd_off_cen(u_shift, v_shift, dither, rotate):
 
     # check if the off_center psf agree with the input delta object
     np.testing.assert_allclose(off_img, crop_image_norm, atol=1e-6)
+
+
+# --- varying-PSF delta-function test -----------------------------------------
+VARYING_PSF_ATOL = 1e-4
+
+np.random.seed(99)
+varying_psf_shifts = [
+    (np.random.uniform(-1.8, 1.8), np.random.uniform(-1.8, 1.8))
+    for _ in range(5)
+]
+
+
+def _coadd_and_psf_at_shift(
+    rng, u_shift, v_shift, *, psf_variation_factor, dither, rotate
+):
+    """One-delta sim with a varying PSF: coadd it and return the coadd dict
+    plus the normalized coadd-PSF image reconstructed at the delta's
+    position."""
+    sim_data = _make_sim(
+        rng=rng,
+        psf_type="ps",
+        psf_variation_factor=psf_variation_factor,
+        bands=["i"],
+        coadd_dim=coadd_dim,
+        psf_dim=psf_dim,
+        dither=dither,
+        rotate=rotate,
+        u_shift=u_shift,
+        v_shift=v_shift,
+    )
+
+    exps = sim_data["band_data"]["i"]
+    coadd_wcs = sim_data["coadd_wcs"]
+    coadd_bbox = sim_data["coadd_bbox"]
+    psf_dims = sim_data["psf_dims"]
+
+    coadd_dict = make_coadd(
+        exps=exps,
+        coadd_wcs=coadd_wcs,
+        coadd_bbox=coadd_bbox,
+        psf_dims=psf_dims,
+        rng=np.random.RandomState(7),
+        remove_poisson=False,
+    )
+
+    # world position of the injected delta from its (u, v) offset, then the
+    # corresponding coadd pixel position.
+    coadd_cen_skypos = get_coadd_center_gs_pos(
+        coadd_wcs=coadd_wcs,
+        coadd_bbox=coadd_bbox,
+    )
+    world_pos = coadd_cen_skypos.deproject(
+        u_shift * galsim.arcsec,
+        v_shift * galsim.arcsec,
+    )
+    dm_world_pos = geom.SpherePoint(
+        world_pos.ra / galsim.degrees,
+        world_pos.dec / galsim.degrees,
+        geom.degrees,
+    )
+    image_pos = coadd_wcs.skyToPixel(dm_world_pos)
+    dm_image_pos = geom.Point2D(image_pos.x, image_pos.y)
+
+    psf_off = get_coadd_psf_at_position(
+        exps=exps,
+        coadd_wcs=coadd_wcs,
+        coadd_bbox=coadd_bbox,
+        psf_dims=psf_dims,
+        image_pos=dm_image_pos,
+        rng=np.random.RandomState(13),
+        remove_poisson=False,
+    )
+    off_img = psf_off.computeKernelImage(dm_image_pos).array
+    off_img = off_img / off_img.sum()
+
+    return sim_data, coadd_dict, off_img
+
+
+@pytest.mark.parametrize("psf_variation_factor", [1, 3])
+@pytest.mark.parametrize("dither, rotate", [(False, False), (True, True)])
+@pytest.mark.parametrize("u_shift, v_shift", varying_psf_shifts)
+def test_delta_matches_varying_psf(
+    u_shift, v_shift, dither, rotate, psf_variation_factor
+):
+    """The coadded delta image equals the varying coadd PSF at its location."""
+    rng = np.random.RandomState(2025)
+
+    sim_data, coadd_dict, off_img = _coadd_and_psf_at_shift(
+        rng,
+        u_shift,
+        v_shift,
+        psf_variation_factor=psf_variation_factor,
+        dither=dither,
+        rotate=rotate,
+    )
+
+    # the reconstructed PSF is a valid, normalized stamp
+    assert off_img.shape == (psf_dim, psf_dim)
+    assert np.isfinite(off_img).all()
+    np.testing.assert_allclose(off_img.sum(), 1.0, rtol=1e-6, atol=1e-8)
+
+    # crop the coadded delta image to a psf_dim stamp around its location
+    crop_box = get_crop_bbox(
+        u_shift=u_shift,
+        v_shift=v_shift,
+        coadd_dim=coadd_dim,
+        psf_dim=psf_dim,
+        pixel_scale=sim_data["coadd_wcs"].getPixelScale().asArcseconds(),
+    )
+    crop_image = coadd_dict["coadd_exp"][crop_box].image.array
+    crop_image_norm = crop_image / crop_image.sum()
+
+    _report_diff(
+        off_img, crop_image_norm, u_shift=u_shift, v_shift=v_shift,
+        dither=dither, rotate=rotate,
+        psf_variation_factor=psf_variation_factor,
+    )
+
+    # delta * PSF == PSF: the imaged point source matches the coadd PSF at
+    # that position, even though the PSF varies across the field.
+    np.testing.assert_allclose(off_img, crop_image_norm, atol=VARYING_PSF_ATOL)
